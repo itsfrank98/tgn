@@ -6,12 +6,13 @@ import argparse
 import torch
 import numpy as np
 import pickle
+import yaml
 from pathlib import Path
 
 from evaluation.evaluation import eval_edge_prediction
 from model.tgn import TGN
 from utils.utils import EarlyStopMonitor, RandEdgeSampler, get_neighbor_finder
-from utils.data_processing import get_data, compute_time_statistics
+from utils.data_processing import get_data, compute_time_statistics, get_data_with_interaction
 
 torch.manual_seed(0)
 np.random.seed(0)
@@ -62,35 +63,36 @@ parser.add_argument('--use_source_embedding_in_message', action='store_true',
                     help='Whether to use the embedding of the source node as part of the message')
 parser.add_argument('--dyrep', action='store_true',
                     help='Whether to run the dyrep model')
+with open("parameters.yaml", 'r') as params_file:
+    args = yaml.safe_load(params_file)
 
-
-try:
+"""try:
   args = parser.parse_args()
 except:
   parser.print_help()
-  sys.exit(0)
+  sys.exit(0)"""
 
-BATCH_SIZE = args.bs
-NUM_NEIGHBORS = args.n_degree
+BATCH_SIZE = args["bs"]
+NUM_NEIGHBORS = args["n_degree"]
 NUM_NEG = 1
-NUM_EPOCH = args.n_epoch
-NUM_HEADS = args.n_head
-DROP_OUT = args.drop_out
-GPU = args.gpu
-DATA = args.data
-NUM_LAYER = args.n_layer
-LEARNING_RATE = args.lr
-NODE_DIM = args.node_dim
-TIME_DIM = args.time_dim
-USE_MEMORY = args.use_memory
-MESSAGE_DIM = args.message_dim
-MEMORY_DIM = args.memory_dim
+NUM_EPOCH = args["n_epoch"]
+NUM_HEADS = args["n_head"]
+DROP_OUT = args["drop_out"]
+GPU = args["gpu"]
+DATA = args["data"]
+NUM_LAYER = args["n_layer"]
+LEARNING_RATE = args["lr"]
+NODE_DIM = args["node_dim"]
+TIME_DIM = args["time_dim"]
+USE_MEMORY = args["use_memory"]
+MESSAGE_DIM = args["message_dim"]
+MEMORY_DIM = args["memory_dim"]
 
 Path("./saved_models/").mkdir(parents=True, exist_ok=True)
 Path("./saved_checkpoints/").mkdir(parents=True, exist_ok=True)
-MODEL_SAVE_PATH = f'./saved_models/{args.prefix}-{args.data}.pth'
+MODEL_SAVE_PATH = f'./saved_models/{args["prefix"]}-{args["data"]}.pth'
 get_checkpoint_path = lambda \
-    epoch: f'./saved_checkpoints/{args.prefix}-{args.data}-{epoch}.pth'
+    epoch: f'./saved_checkpoints/{args["prefix"]}-{args["data"]}-{epoch}.pth'
 
 ### set up logger
 logging.basicConfig(level=logging.INFO)
@@ -108,39 +110,62 @@ logger.addHandler(fh)
 logger.addHandler(ch)
 logger.info(args)
 
+
 ### Extract data for training, validation and testing
-node_features, edge_features, full_data, train_data, val_data, test_data, new_node_val_data, \
-new_node_test_data = get_data(DATA,
-                              different_new_nodes_between_val_and_test=args.different_new_nodes, randomize_features=args.randomize_features)
+if DATA == "gab":
+    node_features, edge_features, full_data, train_data, val_data, test_data, new_node_val_data, \
+        new_node_test_data = get_data_with_interaction(DATA, different_new_nodes_between_val_and_test=args[
+        "different_new_nodes"], randomize_features=args["randomize_features"])
+else:
+    node_features, edge_features, full_data, train_data, val_data, test_data, new_node_val_data, \
+    new_node_test_data = get_data(DATA, different_new_nodes_between_val_and_test=args["different_new_nodes"], randomize_features=args["randomize_features"])
+
 
 # Initialize training neighbor finder to retrieve temporal graph
-train_ngh_finder = get_neighbor_finder(train_data, args.uniform)
+train_ngh_finder = get_neighbor_finder(train_data, args["uniform"])
 
 # Initialize validation and test neighbor finder to retrieve temporal graph
-full_ngh_finder = get_neighbor_finder(full_data, args.uniform)
-
-# Initialize negative samplers. Set seeds for validation and testing so negatives are the same
-# across different runs
-# NB: in the inductive setting, negatives are sampled only amongst other new nodes
-train_rand_sampler = RandEdgeSampler(train_data.sources, train_data.destinations)
-val_rand_sampler = RandEdgeSampler(full_data.sources, full_data.destinations, seed=0)
-nn_val_rand_sampler = RandEdgeSampler(new_node_val_data.sources, new_node_val_data.destinations,
-                                      seed=1)
-test_rand_sampler = RandEdgeSampler(full_data.sources, full_data.destinations, seed=2)
-nn_test_rand_sampler = RandEdgeSampler(new_node_test_data.sources,
-                                       new_node_test_data.destinations,
-                                       seed=3)
+full_ngh_finder = get_neighbor_finder(full_data, args["uniform"])
 
 # Set device
 device_string = 'cuda:{}'.format(GPU) if torch.cuda.is_available() else 'cpu'
 device = torch.device(device_string)
 
-# Compute time statistics
-mean_time_shift_src, std_time_shift_src, mean_time_shift_dst, std_time_shift_dst = \
-  compute_time_statistics(full_data.sources, full_data.destinations, full_data.timestamps)
+# Initialize negative samplers. Set seeds for validation and testing so negatives are the same
+# across different runs
+# NB: in the inductive setting, negatives are sampled only amongst other new nodes
+if DATA == "gab":
+    train_edge_mask = train_data.interaction_types == 0
+    val_edge_mask = val_data.interaction_types == 0
+    test_edge_mask = test_data.interaction_types == 0
+    full_edge_mask = full_data.interaction_types == 0
+    new_node_val_mask = new_node_val_data.interaction_types == 0
+    new_node_test_mask = new_node_test_data.interaction_types == 0
 
-for i in range(args.n_runs):
-  results_path = "results/{}_{}.pkl".format(args.prefix, i) if i > 0 else "results/{}.pkl".format(args.prefix)
+    train_rand_sampler = RandEdgeSampler(train_data.sources[train_edge_mask], train_data.destinations[train_edge_mask])
+
+    # Why below I pass full_data and not val_data? Because I would restrict which nodes can appear in negative samples to only nodes that were active in the validation period.
+    val_rand_sampler = RandEdgeSampler(full_data.sources[full_edge_mask], full_data.destinations[full_edge_mask], seed=0)
+    nn_val_rand_sampler = RandEdgeSampler(new_node_val_data.sources[new_node_val_mask],
+                                          new_node_val_data.destinations[new_node_val_mask], seed=1)
+    test_rand_sampler = RandEdgeSampler(full_data.sources[full_edge_mask], full_data.destinations[full_edge_mask], seed=2)
+    nn_test_rand_sampler = RandEdgeSampler(new_node_test_data.sources[new_node_test_mask],
+                                           new_node_test_data.destinations[new_node_test_mask], seed=3)
+    mean_time_shift_src, std_time_shift_src, mean_time_shift_dst, std_time_shift_dst = \
+        compute_time_statistics(full_data.sources[full_edge_mask], full_data.destinations[full_edge_mask],
+                                full_data.timestamps[full_edge_mask])
+else:
+    train_rand_sampler = RandEdgeSampler(train_data.sources, train_data.destinations)
+    val_rand_sampler = RandEdgeSampler(full_data.sources, full_data.destinations, seed=0)
+    nn_val_rand_sampler = RandEdgeSampler(new_node_val_data.sources, new_node_val_data.destinations, seed=1)
+    test_rand_sampler = RandEdgeSampler(full_data.sources, full_data.destinations, seed=2)
+    nn_test_rand_sampler = RandEdgeSampler(new_node_test_data.sources, new_node_test_data.destinations, seed=3)
+    mean_time_shift_src, std_time_shift_src, mean_time_shift_dst, std_time_shift_dst = \
+        compute_time_statistics(full_data.sources, full_data.destinations, full_data.timestamps)
+
+
+for i in range(args["n_runs"]):
+  results_path = "results/{}_{}.pkl".format(args["prefix"], i) if i > 0 else "results/{}.pkl".format(args["prefix"])
   Path("results/").mkdir(parents=True, exist_ok=True)
 
   # Initialize Model
@@ -149,17 +174,17 @@ for i in range(args.n_runs):
             n_layers=NUM_LAYER,
             n_heads=NUM_HEADS, dropout=DROP_OUT, use_memory=USE_MEMORY,
             message_dimension=MESSAGE_DIM, memory_dimension=MEMORY_DIM,
-            memory_update_at_start=not args.memory_update_at_end,
-            embedding_module_type=args.embedding_module,
-            message_function=args.message_function,
-            aggregator_type=args.aggregator,
-            memory_updater_type=args.memory_updater,
+            memory_update_at_start=not args["memory_update_at_end"],
+            embedding_module_type=args["embedding_module"],
+            message_function=args["message_function"],
+            aggregator_type=args["aggregator"],
+            memory_updater_type=args["memory_updater"],
             n_neighbors=NUM_NEIGHBORS,
             mean_time_shift_src=mean_time_shift_src, std_time_shift_src=std_time_shift_src,
             mean_time_shift_dst=mean_time_shift_dst, std_time_shift_dst=std_time_shift_dst,
-            use_destination_embedding_in_message=args.use_destination_embedding_in_message,
-            use_source_embedding_in_message=args.use_source_embedding_in_message,
-            dyrep=args.dyrep)
+            use_destination_embedding_in_message=args["use_destination_embedding_in_message"],
+            use_source_embedding_in_message=args["use_source_embedding_in_message"],
+            dyrep=args["dyrep"])
   criterion = torch.nn.BCELoss()
   optimizer = torch.optim.Adam(tgn.parameters(), lr=LEARNING_RATE)
   tgn = tgn.to(device)
@@ -177,7 +202,7 @@ for i in range(args.n_runs):
   total_epoch_times = []
   train_losses = []
 
-  early_stopper = EarlyStopMonitor(max_round=args.patience)
+  early_stopper = EarlyStopMonitor(max_round=args["patience"])
   for epoch in range(NUM_EPOCH):
     start_epoch = time.time()
     ### Training
@@ -191,12 +216,12 @@ for i in range(args.n_runs):
     m_loss = []
 
     logger.info('start {} epoch'.format(epoch))
-    for k in range(0, num_batch, args.backprop_every):
+    for k in range(0, num_batch, args["backprop_every"]):
       loss = 0
       optimizer.zero_grad()
 
       # Custom loop to allow to perform backpropagation only every a certain number of batches
-      for j in range(args.backprop_every):
+      for j in range(args["backprop_every"]):
         batch_idx = k + j
 
         if batch_idx >= num_batch:
@@ -222,13 +247,13 @@ for i in range(args.n_runs):
 
         loss += criterion(pos_prob.squeeze(), pos_label) + criterion(neg_prob.squeeze(), neg_label)
 
-      loss /= args.backprop_every
+      loss /= args["backprop_every"]
 
       loss.backward()
       optimizer.step()
       m_loss.append(loss.item())
 
-      # Detach memory after 'args.backprop_every' number of batches so we don't backpropagate to
+      # Detach memory after 'args["backprop_every"]' number of batches so we don't backpropagate to
       # the start of time
       if USE_MEMORY:
         tgn.memory.detach_memory()
@@ -309,19 +334,15 @@ for i in range(args.n_runs):
 
   ### Test
   tgn.embedding_module.neighbor_finder = full_ngh_finder
-  test_ap, test_auc = eval_edge_prediction(model=tgn,
-                                                              negative_edge_sampler=test_rand_sampler,
-                                                              data=test_data,
-                                                              n_neighbors=NUM_NEIGHBORS)
+  test_ap, test_auc = eval_edge_prediction(model=tgn, negative_edge_sampler=test_rand_sampler, data=test_data,
+                                           n_neighbors=NUM_NEIGHBORS)
 
   if USE_MEMORY:
     tgn.memory.restore_memory(val_memory_backup)
 
   # Test on unseen nodes
-  nn_test_ap, nn_test_auc = eval_edge_prediction(model=tgn,
-                                                                          negative_edge_sampler=nn_test_rand_sampler,
-                                                                          data=new_node_test_data,
-                                                                          n_neighbors=NUM_NEIGHBORS)
+  nn_test_ap, nn_test_auc = eval_edge_prediction(model=tgn, negative_edge_sampler=nn_test_rand_sampler,
+                                                 data=new_node_test_data, n_neighbors=NUM_NEIGHBORS)
 
   logger.info(
     'Test statistics: Old nodes -- auc: {}, ap: {}'.format(test_auc, test_ap))

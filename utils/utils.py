@@ -91,11 +91,16 @@ class RandEdgeSampler(object):
 def get_neighbor_finder(data, uniform, max_node_idx=None):
   max_node_idx = max(data.sources.max(), data.destinations.max()) if max_node_idx is None else max_node_idx
   adj_list = [[] for _ in range(max_node_idx + 1)]
-  for source, destination, edge_idx, timestamp in zip(data.sources, data.destinations,
-                                                      data.edge_idxs,
-                                                      data.timestamps):
-    adj_list[source].append((destination, edge_idx, timestamp))
-    adj_list[destination].append((source, edge_idx, timestamp))
+  if hasattr(data, 'interaction_type'):
+      for source, destination, edge_idx, timestamp, interaction_type in zip(data.sources, data.destinations,
+                                                          data.edge_idxs, data.timestamps, data.interaction_types):
+        if interaction_type == 0:
+            adj_list[source].append((destination, edge_idx, timestamp, interaction_type))
+            adj_list[destination].append((source, edge_idx, timestamp, interaction_type))
+  else:
+      for source, destination, edge_idx, timestamp in zip(data.sources, data.destinations, data.edge_idxs, data.timestamps):
+          adj_list[source].append((destination, edge_idx, timestamp))
+          adj_list[destination].append((source, edge_idx, timestamp))
 
   return NeighborFinder(adj_list, uniform=uniform)
 
@@ -105,6 +110,7 @@ class NeighborFinder:
     self.node_to_neighbors = []
     self.node_to_edge_idxs = []
     self.node_to_edge_timestamps = []
+    self.node_to_edge_interaction_types = []
 
     for neighbors in adj_list:
       # Neighbors is a list of tuples (neighbor, edge_idx, timestamp)
