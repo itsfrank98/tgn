@@ -13,17 +13,12 @@ from model.time_encoding import TimeEncode
 
 
 class TGN(torch.nn.Module):
-  def __init__(self, neighbor_finder, node_features, edge_features, device, n_layers=2,
-               n_heads=2, dropout=0.1, use_memory=False,
-               memory_update_at_start=True, message_dimension=100,
-               memory_dimension=500, embedding_module_type="graph_attention",
-               message_function="mlp",
-               mean_time_shift_src=0, std_time_shift_src=1, mean_time_shift_dst=0,
-               std_time_shift_dst=1, n_neighbors=None, aggregator_type="last",
-               memory_updater_type="gru",
-               use_destination_embedding_in_message=False,
-               use_source_embedding_in_message=False,
-               dyrep=False):
+  def __init__(self, neighbor_finder, node_features, edge_features, device, n_layers=2, n_heads=2, dropout=0.1,
+               use_memory=False, memory_update_at_start=True, message_dimension=100, memory_dimension=500,
+               embedding_module_type="graph_attention", message_function="mlp", mean_time_shift_src=0,
+               std_time_shift_src=1, mean_time_shift_dst=0, std_time_shift_dst=1, n_neighbors=None,
+               aggregator_type="last", memory_updater_type="gru", use_destination_embedding_in_message=False,
+               use_source_embedding_in_message=False, dyrep=False):
     super(TGN, self).__init__()
 
     self.n_layers = n_layers
@@ -31,12 +26,15 @@ class TGN(torch.nn.Module):
     self.device = device
     self.logger = logging.getLogger(__name__)
 
-    if len(node_features.shape)==2:
-        self.node_raw_features = torch.from_numpy(node_features.astype(np.float32)).to(device)
-    elif len(node_features.shape)==3:
-        self.node_raw_features = torch.from_numpy(node_features[0].astype(np.float32)).to(device)
-    self.n_node_features = self.node_raw_features.shape[1]
-    self.n_nodes = self.node_raw_features.shape[0]
+    self.node_raw_features = torch.from_numpy(node_features.astype(np.float32)).to(device)
+    self.latest_node_features = self.node_raw_features.clone()
+    if len(self.node_raw_features.shape)==2:
+        self.n_node_features = self.node_raw_features.shape[1]
+        self.n_nodes = self.node_raw_features.shape[0]
+    else:
+        self.n_node_features = self.node_raw_features.shape[2]
+        self.n_nodes = self.node_raw_features.shape[1]
+
     self.edge_raw_features = torch.from_numpy(edge_features.astype(np.float32)).to(device)
 
     self.n_edge_features = self.edge_raw_features.shape[1]
@@ -59,8 +57,7 @@ class TGN(torch.nn.Module):
     if self.use_memory:
       self.memory_dimension = memory_dimension
       self.memory_update_at_start = memory_update_at_start
-      raw_message_dimension = 2 * self.memory_dimension + self.n_edge_features + \
-                              self.time_encoder.dimension
+      raw_message_dimension = 2 * self.memory_dimension + self.n_edge_features + self.time_encoder.dimension
       message_dimension = message_dimension if message_function != "identity" else raw_message_dimension
       self.memory = Memory(n_nodes=self.n_nodes,
                            memory_dimension=self.memory_dimension,
@@ -80,29 +77,43 @@ class TGN(torch.nn.Module):
 
     self.embedding_module_type = embedding_module_type
 
-    self.embedding_module = get_embedding_module(module_type=embedding_module_type,
-                                                 node_features=self.node_raw_features,
-                                                 edge_features=self.edge_raw_features,
-                                                 memory=self.memory,
-                                                 neighbor_finder=self.neighbor_finder,
-                                                 time_encoder=self.time_encoder,
-                                                 n_layers=self.n_layers,
-                                                 n_node_features=self.n_node_features,
-                                                 n_edge_features=self.n_edge_features,
-                                                 n_time_features=self.n_node_features,
-                                                 embedding_dimension=self.embedding_dimension,
-                                                 device=self.device,
-                                                 n_heads=n_heads, dropout=dropout,
-                                                 use_memory=use_memory,
-                                                 n_neighbors=self.n_neighbors)
+    if len(self.node_raw_features.shape)==2:
+        self.embedding_module = get_embedding_module(module_type=embedding_module_type,
+                                                     node_features=self.node_raw_features,
+                                                     edge_features=self.edge_raw_features,
+                                                     memory=self.memory,
+                                                     neighbor_finder=self.neighbor_finder,
+                                                     time_encoder=self.time_encoder,
+                                                     n_layers=self.n_layers,
+                                                     n_node_features=self.n_node_features,
+                                                     n_edge_features=self.n_edge_features,
+                                                     n_time_features=self.n_node_features,
+                                                     embedding_dimension=self.embedding_dimension,
+                                                     device=self.device,
+                                                     n_heads=n_heads, dropout=dropout,
+                                                     use_memory=use_memory,
+                                                     n_neighbors=self.n_neighbors)
+    else:
+        self.embedding_module = get_embedding_module(module_type=embedding_module_type,
+                                                     node_features=self.latest_node_features,
+                                                     edge_features=self.edge_raw_features,
+                                                     memory=self.memory,
+                                                     neighbor_finder=self.neighbor_finder,
+                                                     time_encoder=self.time_encoder,
+                                                     n_layers=self.n_layers,
+                                                     n_node_features=self.n_node_features,
+                                                     n_edge_features=self.n_edge_features,
+                                                     n_time_features=self.n_node_features,
+                                                     embedding_dimension=self.embedding_dimension,
+                                                     device=self.device,
+                                                     n_heads=n_heads, dropout=dropout,
+                                                     use_memory=use_memory,
+                                                     n_neighbors=self.n_neighbors)
 
     # MLP to compute probability on an edge given two node embeddings
-    self.affinity_score = MergeLayer(self.n_node_features, self.n_node_features,
-                                     self.n_node_features,
-                                     1)
+    self.affinity_score = MergeLayer(self.n_node_features, self.n_node_features, self.n_node_features,1)
 
-  def compute_temporal_embeddings(self, source_nodes, destination_nodes, negative_nodes, edge_times,
-                                  edge_idxs, n_neighbors=20):
+  def compute_temporal_embeddings(self, source_nodes, destination_nodes, negative_nodes, edge_times, edge_idxs, n_neighbors=20):
     """
     Compute temporal embeddings for sources, destinations, and negatively sampled destinations.
 
@@ -148,12 +159,8 @@ class TGN(torch.nn.Module):
                              dim=0)
 
     # Compute the embeddings using the embedding module
-    node_embedding = self.embedding_module.compute_embedding(memory=memory,
-                                                             source_nodes=nodes,
-                                                             timestamps=timestamps,
-                                                             n_layers=self.n_layers,
-                                                             n_neighbors=n_neighbors,
-                                                             time_diffs=time_diffs)
+    node_embedding = self.embedding_module.compute_embedding(memory=memory, source_nodes=nodes, timestamps=timestamps,
+                                                             n_layers=self.n_layers, n_neighbors=n_neighbors, time_diffs=time_diffs)
 
     source_node_embedding = node_embedding[:n_samples]
     destination_node_embedding = node_embedding[n_samples: 2 * n_samples]
@@ -161,8 +168,7 @@ class TGN(torch.nn.Module):
 
     if self.use_memory:
       if self.memory_update_at_start:
-        # Persist the updates to the memory only for sources and destinations (since now we have
-        # new messages for them)
+        # Persist the updates to the memory only for sources and destinations (since now we have new messages for them)
         self.update_memory(positives, self.memory.messages)
 
         #assert torch.allclose(memory[positives], self.memory.get_memory(positives), atol=1e-5), "Something wrong in how the memory was updated"
@@ -170,10 +176,8 @@ class TGN(torch.nn.Module):
         # Remove messages for the positives since we have already updated the memory using them
         self.memory.clear_messages(positives)
 
-      unique_sources, source_id_to_messages = self.get_raw_messages(source_nodes,
-                                                                    source_node_embedding,
-                                                                    destination_nodes,
-                                                                    destination_node_embedding,
+      unique_sources, source_id_to_messages = self.get_raw_messages(source_nodes, source_node_embedding,
+                                                                    destination_nodes, destination_node_embedding,
                                                                     edge_times, edge_idxs)
       unique_destinations, destination_id_to_messages = self.get_raw_messages(destination_nodes,
                                                                               destination_node_embedding,
@@ -194,8 +198,48 @@ class TGN(torch.nn.Module):
 
     return source_node_embedding, destination_node_embedding, negative_node_embedding
 
-  def compute_edge_probabilities(self, source_nodes, destination_nodes, negative_nodes, edge_times,
-                                 edge_idxs, n_neighbors=20):
+  def process_node_wise_event(self, node: int, timestamp: float, new_feature: torch.Tensor):
+      """
+      Update latest features and memory for a single node-wise event.
+      node: node index (int or tensor)
+      timestamp: event time
+      new_feature: torch.Tensor of shape (self.n_node_features,) — your 768-dim vector
+      """
+      if new_feature.shape != (self.n_node_features,):
+          raise ValueError(f"Expected node feature dim {self.n_node_features}, got {new_feature.shape}")
+
+      # 1. Update the current feature vector
+      self.latest_node_features[node] = new_feature.to(self.device)
+
+      if not self.use_memory:
+          return  # no memory → features alone are enough for embedding
+
+      # 2. Get current (pre-update) memory
+      current_memory = self.memory.get_memory(node)  # shape (memory_dim,)
+
+      # 3. Compute time delta since last update
+      last_update_ts = self.memory.last_update[node]
+      time_delta = torch.tensor([timestamp - last_update_ts], device=self.device)
+      time_enc = self.time_encoder(time_delta).squeeze()  # shape (time_dim,)
+
+      # 4. Compute node-wise message: msg_n(s_i(t^-), t, v_i(t))
+      #    → reuse the message function but only with node-relevant parts
+      #    (adapt depending on your message_function implementation)
+      raw_msg_parts = [current_memory, time_enc, new_feature]
+      raw_msg = torch.cat(raw_msg_parts)
+
+      # If your message_function expects edge features, you can pad with zeros
+      # or modify get_message_function to have a separate node-wise path.
+      # Simplest: assume identity or MLP can handle variable concat
+      message = self.message_function.compute_message(raw_msg.unsqueeze(0)).squeeze()
+
+      # 5. Aggregate (single message → trivial)
+      aggregated_message = message  # or self.message_aggregator([message])
+
+      # 6. Update memory
+      self.memory_updater.update_memory([node], [aggregated_message], [timestamp])
+
+  def compute_edge_probabilities(self, source_nodes, destination_nodes, negative_nodes, edge_times, edge_idxs, n_neighbors=20):
     """
     Compute probabilities for edges between sources and destination and between sources and
     negatives by first computing temporal embeddings using the TGN encoder and then feeding them

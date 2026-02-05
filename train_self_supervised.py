@@ -114,7 +114,7 @@ logger.info(args)
 ### Extract data for training, validation and testing
 if DATA == "gab":
     node_features, edge_features, full_data, train_data, val_data, test_data, new_node_val_data, \
-        new_node_test_data = get_data_with_interaction(DATA, different_new_nodes_between_val_and_test=args[
+        new_node_test_data = get_data_with_interaction(DATA+"_new_repr", different_new_nodes_between_val_and_test=args[
         "different_new_nodes"], randomize_features=args["randomize_features"])
 else:
     node_features, edge_features, full_data, train_data, val_data, test_data, new_node_val_data, \
@@ -211,6 +211,9 @@ for i in range(args["n_runs"]):
     if USE_MEMORY:
       tgn.memory.__init_memory__()
 
+    if DATA=="gab":
+        tgn.latest_node_features.copy_(tgn.node_raw_features)
+
     # Train using only training graph
     tgn.set_neighbor_finder(train_ngh_finder)
     m_loss = []
@@ -229,11 +232,14 @@ for i in range(args["n_runs"]):
 
         start_idx = batch_idx * BATCH_SIZE
         end_idx = min(num_instance, start_idx + BATCH_SIZE)
-        sources_batch, destinations_batch = train_data.sources[start_idx:end_idx], \
-                                            train_data.destinations[start_idx:end_idx]
+        sources_batch, destinations_batch = train_data.sources[start_idx:end_idx], train_data.destinations[start_idx:end_idx]
         edge_idxs_batch = train_data.edge_idxs[start_idx: end_idx]
         timestamps_batch = train_data.timestamps[start_idx:end_idx]
 
+        if DATA == "gab":
+            interaction_types_batch = train_data.interaction_types[start_idx:end_idx]
+            node_feats_batch = train_data.node_feats[start_idx:end_idx] if hasattr(train_data, 'node_feats') else None
+            # TODO CAPIRE COME RICAVARE LE FEATURES
         size = len(sources_batch)
         _, negatives_batch = train_rand_sampler.sample(size)
 

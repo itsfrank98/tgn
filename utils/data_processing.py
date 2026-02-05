@@ -4,7 +4,7 @@ import pandas as pd
 
 
 class Data:
-  def __init__(self, sources, destinations, timestamps, edge_idxs, labels, interaction_types=None):
+  def __init__(self, sources, destinations, timestamps, edge_idxs, labels, interaction_types=None, features=None):
     self.sources = sources
     self.destinations = destinations
     self.timestamps = timestamps
@@ -14,6 +14,7 @@ class Data:
     self.unique_nodes = set(sources) | set(destinations)
     self.n_unique_nodes = len(self.unique_nodes)
     self.interaction_types = interaction_types
+    self.features = features
 
 
 def get_data_node_classification(dataset_name, use_validation=False):
@@ -53,11 +54,11 @@ def get_data_node_classification(dataset_name, use_validation=False):
 def get_data_with_interaction(dataset_name, different_new_nodes_between_val_and_test=False, randomize_features=False):
   ### Load data and train val test split
   graph_df = pd.read_csv('./data/ml_{}.csv'.format(dataset_name))
-  edge_features = np.load('./data/ml_{}.npy'.format(dataset_name))
+  #edge_features = np.load('./data/ml_{}.npy'.format(dataset_name))
   #node_features = np.load('./data/ml_{}_node.npy'.format(dataset_name))
-  node_features = np.load('./data/{}_tensor.npy'.format(dataset_name))
+  """node_features = np.load('./data/{}_tensor.npy'.format(dataset_name))
   if randomize_features:
-    node_features = np.random.rand(node_features.shape[0], node_features.shape[1])
+    node_features = np.random.rand(node_features.shape[0], node_features.shape[1])"""
 
   val_time, test_time = list(np.quantile(graph_df.ts, [0.70, 0.85]))
 
@@ -67,8 +68,9 @@ def get_data_with_interaction(dataset_name, different_new_nodes_between_val_and_
   labels = graph_df.label.values
   timestamps = graph_df.ts.values
   types = graph_df.type.values
+  features = graph_df.features.values
 
-  full_data = Data(sources, destinations, timestamps, edge_idxs, labels, interaction_types=types)
+  full_data = Data(sources, destinations, timestamps, edge_idxs, labels, interaction_types=types, features=features)
 
   random.seed(2020)
 
