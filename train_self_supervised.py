@@ -113,9 +113,9 @@ logger.info(args)
 
 ### Extract data for training, validation and testing
 if DATA == "gab":
-    node_features, edge_features, full_data, train_data, val_data, test_data, new_node_val_data, \
-        new_node_test_data = get_data_with_interaction(DATA+"_new_repr", different_new_nodes_between_val_and_test=args[
-        "different_new_nodes"], randomize_features=args["randomize_features"])
+    full_data, train_data, val_data, test_data, new_node_val_data, new_node_test_data = get_data_with_interaction(
+        DATA+"_new_repr", different_new_nodes_between_val_and_test=args["different_new_nodes"], randomize_features=args["randomize_features"])
+    # node_features, edge_features,
 else:
     node_features, edge_features, full_data, train_data, val_data, test_data, new_node_val_data, \
     new_node_test_data = get_data(DATA, different_new_nodes_between_val_and_test=args["different_new_nodes"], randomize_features=args["randomize_features"])

@@ -14,12 +14,12 @@ def preprocess_type_interactions(data_name):
     s = next(f)
     for idx, line in tqdm(enumerate(f)):
       e = line.strip().replace('"', '').split(',')
-      u = int(e[0])
-      i = int(e[1])
+      u = int(e[1])
+      i = int(e[2])
 
-      ts = float(e[2])
-      label = float(e[3])  # int(e[3])
-      feat = np.array([float(x) for x in e[4:-1]])
+      ts = float(e[3])
+      label = float(e[4])  # int(e[3])
+      feat = np.array([float(x) for x in e[5:-1]])
       interaction_type = e[-1]
 
       if interaction_type == '0':
@@ -33,7 +33,7 @@ def preprocess_type_interactions(data_name):
       label_list.append(label)
       idx_list.append(idx)
       feat_l.append(feat)
-      type_list.append(interaction_type)
+      type_list.append(int(interaction_type))
       features_list.append(feat)
   return (pd.DataFrame({'u': u_list,
                        'i': i_list,

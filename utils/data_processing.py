@@ -1,7 +1,7 @@
 import numpy as np
 import random
 import pandas as pd
-
+import ast
 
 class Data:
   def __init__(self, sources, destinations, timestamps, edge_idxs, labels, interaction_types=None, features=None):
@@ -69,7 +69,7 @@ def get_data_with_interaction(dataset_name, different_new_nodes_between_val_and_
   timestamps = graph_df.ts.values
   types = graph_df.type.values
   features = graph_df.features.values
-
+  features = [np.fromstring(x.strip('[]'), sep=' ') for x in features]
   full_data = Data(sources, destinations, timestamps, edge_idxs, labels, interaction_types=types, features=features)
 
   random.seed(2020)
@@ -78,8 +78,7 @@ def get_data_with_interaction(dataset_name, different_new_nodes_between_val_and_
   n_total_unique_nodes = len(node_set)
 
   # Compute nodes which appear at test time
-  test_node_set = set(sources[timestamps > val_time]).union(
-    set(destinations[timestamps > val_time]))
+  test_node_set = set(sources[timestamps > val_time]).union(set(destinations[timestamps > val_time]))
   # Sample nodes which we keep as new nodes (to test inductiveness), so than we have to remove all
   # their edges from training
   #new_test_node_set = set(random.sample(list(test_node_set), int(0.1 * n_total_unique_nodes)))
@@ -95,9 +94,9 @@ def get_data_with_interaction(dataset_name, different_new_nodes_between_val_and_
   # For train we keep edges happening before the validation time which do not involve any new node
   # used for inductiveness
   train_mask = np.logical_and(timestamps <= val_time, observed_edges_mask)
-
-  train_data = Data(sources[train_mask], destinations[train_mask], timestamps[train_mask],
-                    edge_idxs[train_mask], labels[train_mask], types[train_mask])
+  train_mask_indices = np.where(train_mask)[0]
+  train_data = Data(sources[train_mask], destinations[train_mask], timestamps[train_mask], edge_idxs[train_mask],
+                    labels[train_mask], types[train_mask], features=[features[i] for i in train_mask_indices])
 
   # define the new nodes sets for testing inductiveness of the model
   train_node_set = set(train_data.sources).union(train_data.destinations)
@@ -106,6 +105,8 @@ def get_data_with_interaction(dataset_name, different_new_nodes_between_val_and_
 
   val_mask = np.logical_and(timestamps <= test_time, timestamps > val_time)
   test_mask = timestamps > test_time
+  val_mask_indices = np.where(val_mask)[0]
+  test_mask_indices = np.where(test_mask)[0]
 
   if different_new_nodes_between_val_and_test:
     n_new_nodes = len(new_test_node_set) // 2
@@ -126,21 +127,24 @@ def get_data_with_interaction(dataset_name, different_new_nodes_between_val_and_
     new_node_val_mask = np.logical_and(val_mask, edge_contains_new_node_mask)
     new_node_test_mask = np.logical_and(test_mask, edge_contains_new_node_mask)
 
-  # validation and test with all edges
-  val_data = Data(sources[val_mask], destinations[val_mask], timestamps[val_mask],
-                  edge_idxs[val_mask], labels[val_mask], interaction_types=types[val_mask])
+  new_node_val_mask_indices = np.where(new_node_val_mask)[0]
+  new_node_test_mask_indices = np.where(new_node_test_mask)[0]
 
-  test_data = Data(sources[test_mask], destinations[test_mask], timestamps[test_mask],
-                   edge_idxs[test_mask], labels[test_mask], interaction_types=types[test_mask])
+  # validation and test with all edges
+  val_data = Data(sources[val_mask], destinations[val_mask], timestamps[val_mask], edge_idxs[val_mask],
+                  labels[val_mask], interaction_types=types[val_mask], features=[features[i] for i in val_mask_indices])
+
+  test_data = Data(sources[test_mask], destinations[test_mask], timestamps[test_mask], edge_idxs[test_mask],
+                   labels[test_mask], interaction_types=types[test_mask], features=[features[i] for i in test_mask_indices])
 
   # validation and test with edges that at least has one new node (not in training set)
-  new_node_val_data = Data(sources[new_node_val_mask], destinations[new_node_val_mask],
-                           timestamps[new_node_val_mask], edge_idxs[new_node_val_mask], labels[new_node_val_mask],
-                           interaction_types=types[new_node_val_mask])
+  new_node_val_data = Data(sources[new_node_val_mask], destinations[new_node_val_mask], timestamps[new_node_val_mask],
+                           edge_idxs[new_node_val_mask], labels[new_node_val_mask],
+                           interaction_types=types[new_node_val_mask], features=[features[i] for i in new_node_val_mask_indices])
 
   new_node_test_data = Data(sources[new_node_test_mask], destinations[new_node_test_mask],
                             timestamps[new_node_test_mask], edge_idxs[new_node_test_mask],
-                            labels[new_node_test_mask], interaction_types=types[new_node_test_mask])
+                            labels[new_node_test_mask], interaction_types=types[new_node_test_mask], features=[features[i] for i in test_mask_indices])
 
   print("The dataset has {} interactions, involving {} different nodes".format(full_data.n_interactions,
                                                                       full_data.n_unique_nodes))
@@ -157,8 +161,8 @@ def get_data_with_interaction(dataset_name, different_new_nodes_between_val_and_
   print("{} nodes were used for the inductive testing, i.e. are never seen during training".format(
     len(new_test_node_set)))
 
-  return node_features, edge_features, full_data, train_data, val_data, test_data, \
-         new_node_val_data, new_node_test_data
+  return full_data, train_data, val_data, test_data, \
+         new_node_val_data, new_node_test_data  #node_features, edge_features,
 
 
 def get_data(dataset_name, different_new_nodes_between_val_and_test=False, randomize_features=False):
