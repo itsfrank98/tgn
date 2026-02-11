@@ -10,6 +10,8 @@ import pickle
 def preprocess_type_interactions(data_name):
   u_list, i_list, ts_list, label_list, feat_l, idx_list, type_list, node_features, edge_features = [], [], [], [], [], [], [], [], []
   features_list = []
+  edge_rows = []
+  node_rows = []
   with open(data_name) as f:
     s = next(f)
     for idx, line in tqdm(enumerate(f)):
@@ -23,10 +25,9 @@ def preprocess_type_interactions(data_name):
       interaction_type = e[-1]
 
       if interaction_type == '0':
-          edge_features.append(feat)
+        edge_rows.append((u, i, ts, label, idx, feat))
       elif interaction_type == '1':
-          node_features.append(feat)
-
+        node_rows.append((u, i, ts, label, idx, feat))
       u_list.append(u)
       i_list.append(i)
       ts_list.append(ts)
@@ -36,13 +37,12 @@ def preprocess_type_interactions(data_name):
       type_list.append(int(interaction_type))
       features_list.append(feat)
   return (pd.DataFrame({'u': u_list,
-                       'i': i_list,
-                       'ts': ts_list,
-                       'label': label_list,
-                       'type': type_list,
-                       'idx': idx_list,
-                       'features': features_list}))
-          #, np.array(edge_features), np.array(node_features))
+                   'i': i_list,
+                   'ts': ts_list,
+                   'label': label_list,
+                   'type': type_list,
+                   'idx': idx_list,
+                   'features': features_list})), np.array(edge_features), np.array(node_features)
 
 def preprocess(data_name):
   u_list, i_list, ts_list, label_list = [], [], [], []
@@ -98,9 +98,9 @@ def reindex(df, bipartite=True):
 BASE_DIR = "/home/francesco/tgn/data"
 def run(data_name, bipartite=True):
   #Path("data/").mkdir(parents=True, exist_ok=True)
-  PATH = os.path.join(BASE_DIR, f"{data_name}_new.csv")
-  OUT_DF = os.path.join(BASE_DIR, f"ml_{data_name}_new_repr.csv")
-  OUT_FEAT = os.path.join(BASE_DIR, f"ml_{data_name}.npy")
+  PATH = os.path.join(BASE_DIR, f"{data_name}.csv")
+  OUT_DF = os.path.join(BASE_DIR, f"ml_{data_name}.csv")
+  OUT_EDGE_FEAT = os.path.join(BASE_DIR, f"ml_{data_name}_edge.npy")
   OUT_NODE_FEAT = os.path.join(BASE_DIR, f"ml_{data_name}_node.npy")
 
   if data_name == "reddit":
@@ -114,26 +114,32 @@ def run(data_name, bipartite=True):
     rand_feat = np.zeros((max_idx + 1, 172))
 
     new_df.to_csv(OUT_DF)
-    np.save(OUT_FEAT, feat)
+    np.save(OUT_EDGE_FEAT, feat)
     np.save(OUT_NODE_FEAT, rand_feat)
 
   else:
-    df = preprocess_type_interactions(PATH)     #, edge_feat, node_feat
+    df, node_features, edge_features = preprocess_type_interactions(PATH)
     new_df = reindex(df, bipartite)
     new_df.to_csv(OUT_DF)
+    np.save(OUT_NODE_FEAT, node_features)
+    np.save(OUT_EDGE_FEAT, edge_features)
 
-    """empty = np.zeros(edge_feat.shape[1])[np.newaxis, :]
+    """
+    empty = np.zeros(edge_feat.shape[1])[np.newaxis, :]
     feat = np.vstack([empty, edge_feat])
 
     np.save(OUT_FEAT, feat)
-    np.save(OUT_NODE_FEAT, node_feat)"""
+    np.save(OUT_NODE_FEAT, node_feat)
+    """
 
-"""parser = argparse.ArgumentParser('Interface for TGN data preprocessing')
+"""
+parser = argparse.ArgumentParser('Interface for TGN data preprocessing')
 parser.add_argument('--data', type=str, help='Dataset name (eg. wikipedia or reddit)',
                     default='wikipedia')
 parser.add_argument('--bipartite', action='store_true', help='Whether the graph is bipartite')
 
-args = parser.parse_args()"""
+args = parser.parse_args()
+"""
 
 data_name = "gab"
 bipartite = False

@@ -17,51 +17,15 @@ class Data:
     self.features = features
 
 
-def get_data_node_classification(dataset_name, use_validation=False):
+def get_data_with_interaction(dataset_name, different_new_nodes_between_val_and_test=False,):
   ### Load data and train val test split
   graph_df = pd.read_csv('./data/ml_{}.csv'.format(dataset_name))
-  edge_features = np.load('./data/ml_{}.npy'.format(dataset_name))
-  node_features = np.load('./data/ml_{}_node.npy'.format(dataset_name))
-
-  val_time, test_time = list(np.quantile(graph_df.ts, [0.70, 0.85]))
-
-  sources = graph_df.u.values
-  destinations = graph_df.i.values
-  edge_idxs = graph_df.idx.values
-  labels = graph_df.label.values
-  timestamps = graph_df.ts.values
-
-  random.seed(2020)
-
-  train_mask = timestamps <= val_time if use_validation else timestamps <= test_time
-  test_mask = timestamps > test_time
-  val_mask = np.logical_and(timestamps <= test_time, timestamps > val_time) if use_validation else test_mask
-
-  full_data = Data(sources, destinations, timestamps, edge_idxs, labels)
-
-  train_data = Data(sources[train_mask], destinations[train_mask], timestamps[train_mask],
-                    edge_idxs[train_mask], labels[train_mask])
-
-  val_data = Data(sources[val_mask], destinations[val_mask], timestamps[val_mask],
-                  edge_idxs[val_mask], labels[val_mask])
-
-  test_data = Data(sources[test_mask], destinations[test_mask], timestamps[test_mask],
-                   edge_idxs[test_mask], labels[test_mask])
-
-  return full_data, node_features, edge_features, train_data, val_data, test_data
-
-
-def get_data_with_interaction(dataset_name, different_new_nodes_between_val_and_test=False, randomize_features=False):
-  ### Load data and train val test split
-  graph_df = pd.read_csv('./data/ml_{}.csv'.format(dataset_name))
-  #edge_features = np.load('./data/ml_{}.npy'.format(dataset_name))
+  graph_df = graph_df.drop(columns=['Unnamed: 0'])
+  #edge_features = np.load('./data/ml_{}_edge.npy'.format(dataset_name))
   #node_features = np.load('./data/ml_{}_node.npy'.format(dataset_name))
-  """node_features = np.load('./data/{}_tensor.npy'.format(dataset_name))
-  if randomize_features:
-    node_features = np.random.rand(node_features.shape[0], node_features.shape[1])"""
 
   val_time, test_time = list(np.quantile(graph_df.ts, [0.70, 0.85]))
-
+  val_time = 7.0
   sources = graph_df.u.values
   destinations = graph_df.i.values
   edge_idxs = graph_df.idx.values
@@ -79,10 +43,9 @@ def get_data_with_interaction(dataset_name, different_new_nodes_between_val_and_
 
   # Compute nodes which appear at test time
   test_node_set = set(sources[timestamps > val_time]).union(set(destinations[timestamps > val_time]))
-  # Sample nodes which we keep as new nodes (to test inductiveness), so than we have to remove all
-  # their edges from training
-  #new_test_node_set = set(random.sample(list(test_node_set), int(0.1 * n_total_unique_nodes)))
-  new_test_node_set = test_node_set
+  # Sample nodes which we keep as new nodes (to test inductiveness), so than we have to remove all their edges from training
+  new_test_node_set = set(random.sample(list(test_node_set), int(0.1 * n_total_unique_nodes)))
+  #new_test_node_set = test_node_set
   # Mask saying for each source and destination whether they are new test nodes
   new_test_source_mask = graph_df.u.map(lambda x: x in new_test_node_set).values
   new_test_destination_mask = graph_df.i.map(lambda x: x in new_test_node_set).values
@@ -161,8 +124,7 @@ def get_data_with_interaction(dataset_name, different_new_nodes_between_val_and_
   print("{} nodes were used for the inductive testing, i.e. are never seen during training".format(
     len(new_test_node_set)))
 
-  return full_data, train_data, val_data, test_data, \
-         new_node_val_data, new_node_test_data  #node_features, edge_features,
+  return full_data, train_data, val_data, test_data, new_node_val_data, new_node_test_data
 
 
 def get_data(dataset_name, different_new_nodes_between_val_and_test=False, randomize_features=False):
@@ -297,3 +259,37 @@ def compute_time_statistics(sources, destinations, timestamps):
   std_time_shift_dst = np.std(all_timediffs_dst)
 
   return mean_time_shift_src, std_time_shift_src, mean_time_shift_dst, std_time_shift_dst
+
+# FUNCTION FOR NODE CLASSIFICATION. I DON'T NEED IT
+def get_data_node_classification(dataset_name, use_validation=False):
+  ### Load data and train val test split
+  graph_df = pd.read_csv('./data/ml_{}.csv'.format(dataset_name))
+  edge_features = np.load('./data/ml_{}.npy'.format(dataset_name))
+  node_features = np.load('./data/ml_{}_node.npy'.format(dataset_name))
+
+  val_time, test_time = list(np.quantile(graph_df.ts, [0.70, 0.85]))
+
+  sources = graph_df.u.values
+  destinations = graph_df.i.values
+  edge_idxs = graph_df.idx.values
+  labels = graph_df.label.values
+  timestamps = graph_df.ts.values
+
+  random.seed(2020)
+
+  train_mask = timestamps <= val_time if use_validation else timestamps <= test_time
+  test_mask = timestamps > test_time
+  val_mask = np.logical_and(timestamps <= test_time, timestamps > val_time) if use_validation else test_mask
+
+  full_data = Data(sources, destinations, timestamps, edge_idxs, labels)
+
+  train_data = Data(sources[train_mask], destinations[train_mask], timestamps[train_mask],
+                    edge_idxs[train_mask], labels[train_mask])
+
+  val_data = Data(sources[val_mask], destinations[val_mask], timestamps[val_mask],
+                  edge_idxs[val_mask], labels[val_mask])
+
+  test_data = Data(sources[test_mask], destinations[test_mask], timestamps[test_mask],
+                   edge_idxs[test_mask], labels[test_mask])
+
+  return full_data, node_features, edge_features, train_data, val_data, test_data
