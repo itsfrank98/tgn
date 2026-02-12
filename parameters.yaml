@@ -1,5 +1,5 @@
 data: "gab"
-bs: 200
+bs: 1000
 prefix: ''
 n_degree: 10
 n_head: 2

@@ -28,12 +28,8 @@ class TGN(torch.nn.Module):
 
     self.node_raw_features = torch.from_numpy(node_features.astype(np.float32)).to(device)
     self.latest_node_features = self.node_raw_features.clone()
-    if len(self.node_raw_features.shape)==2:
-        self.n_node_features = self.node_raw_features.shape[1]
-        self.n_nodes = self.node_raw_features.shape[0]
-    else:
-        self.n_node_features = self.node_raw_features.shape[2]
-        self.n_nodes = self.node_raw_features.shape[1]
+    self.n_node_features = self.node_raw_features.shape[1]
+    self.n_nodes = self.node_raw_features.shape[0]
 
     self.edge_raw_features = torch.from_numpy(edge_features.astype(np.float32)).to(device)
 
@@ -64,16 +60,13 @@ class TGN(torch.nn.Module):
                            input_dimension=message_dimension,
                            message_dimension=message_dimension,
                            device=device)
-      self.message_aggregator = get_message_aggregator(aggregator_type=aggregator_type,
-                                                       device=device)
+      self.message_aggregator = get_message_aggregator(aggregator_type=aggregator_type, device=device)
       self.message_function = get_message_function(module_type=message_function,
                                                    raw_message_dimension=raw_message_dimension,
                                                    message_dimension=message_dimension)
-      self.memory_updater = get_memory_updater(module_type=memory_updater_type,
-                                               memory=self.memory,
+      self.memory_updater = get_memory_updater(module_type=memory_updater_type, memory=self.memory,
                                                message_dimension=message_dimension,
-                                               memory_dimension=self.memory_dimension,
-                                               device=device)
+                                               memory_dimension=self.memory_dimension, device=device)
 
     self.embedding_module_type = embedding_module_type
 
@@ -155,8 +148,7 @@ class TGN(torch.nn.Module):
         negative_nodes].long()
       negative_time_diffs = (negative_time_diffs - self.mean_time_shift_dst) / self.std_time_shift_dst
 
-      time_diffs = torch.cat([source_time_diffs, destination_time_diffs, negative_time_diffs],
-                             dim=0)
+      time_diffs = torch.cat([source_time_diffs, destination_time_diffs, negative_time_diffs], dim=0)
 
     # Compute the embeddings using the embedding module
     node_embedding = self.embedding_module.compute_embedding(memory=memory, source_nodes=nodes, timestamps=timestamps,
