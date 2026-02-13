@@ -1,7 +1,6 @@
 import numpy as np
 import random
 import pandas as pd
-import ast
 
 
 class Data:
@@ -23,11 +22,10 @@ def get_data_with_interaction(dataset_name, different_new_nodes_between_val_and_
     ### Load data and train val test split
     graph_df = pd.read_csv('./data/ml_{}.csv'.format(dataset_name))
     graph_df = graph_df.drop(columns=['Unnamed: 0'])
-    edge_features = np.load('./data/ml_{}_edge.npy'.format(dataset_name))
-    node_features = np.load('./data/ml_{}_node.npy'.format(dataset_name))
 
     val_time, test_time = list(np.quantile(graph_df.ts, [0.70, 0.85]))
     val_time = 7.0
+    inf_time = 10.0     # snapshots 10, 11, 12 are synthetic and used for inference
     sources = graph_df.u.values
     destinations = graph_df.i.values
     edge_idxs = graph_df.edge_idx.values
@@ -36,8 +34,6 @@ def get_data_with_interaction(dataset_name, different_new_nodes_between_val_and_
     labels = graph_df.label.values
     timestamps = graph_df.ts.values
     types = graph_df.type.values
-    #features = graph_df.features.values
-    #features = [np.fromstring(x.strip('[]'), sep=' ') for x in features]
     full_data = Data(sources=sources, destinations=destinations, timestamps=timestamps, labels=labels, global_idxs=global_idx,
                      edge_idxs=edge_idxs, node_idxs=node_idxs, interaction_types=types)
 
@@ -47,7 +43,7 @@ def get_data_with_interaction(dataset_name, different_new_nodes_between_val_and_
     n_total_unique_nodes = len(node_set)
 
     # Compute nodes which appear at test time
-    test_node_set = set(sources[timestamps > val_time]).union(set(destinations[timestamps > val_time]))
+    test_node_set = set(sources[(timestamps > val_time) & (timestamps < inf_time)]).union(set(destinations[(timestamps > val_time) & (timestamps < inf_time)]))
     # Sample nodes which we keep as new nodes (to test inductiveness), so than we have to remove all their edges from training
     new_test_node_set = set(random.sample(list(test_node_set), int(0.1 * n_total_unique_nodes)))
     # new_test_node_set = test_node_set
@@ -61,7 +57,6 @@ def get_data_with_interaction(dataset_name, different_new_nodes_between_val_and_
 
     # For train we keep edges happening before the validation time which do not involve any new node used for inductiveness
     train_mask = np.logical_and(timestamps <= val_time, observed_edges_mask)
-    train_mask_indices = np.where(train_mask)[0]
     train_data = Data(sources=sources[train_mask], destinations=destinations[train_mask], timestamps=timestamps[train_mask],
                       edge_idxs=edge_idxs[train_mask], labels=labels[train_mask], interaction_types=types[train_mask],
                       global_idxs=global_idx[train_mask], node_idxs=node_idxs[train_mask])
@@ -71,10 +66,9 @@ def get_data_with_interaction(dataset_name, different_new_nodes_between_val_and_
     assert len(train_node_set & new_test_node_set) == 0
     new_node_set = node_set - train_node_set
 
-    val_mask = np.logical_and(timestamps <= test_time, timestamps > val_time)
-    test_mask = timestamps > test_time
-    val_mask_indices = np.where(val_mask)[0]
-    test_mask_indices = np.where(test_mask)[0]
+    val_mask = np.logical_and(timestamps <= test_time, timestamps > val_time, timestamps < inf_time)
+    test_mask = np.logical_and(timestamps > test_time, timestamps < inf_time)
+    inference_mask = timestamps >= inf_time
 
     if different_new_nodes_between_val_and_test:
         n_new_nodes = len(new_test_node_set) // 2

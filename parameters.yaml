@@ -1,4 +1,4 @@
-data: "gab"
+data: "gab_with_synthetic"
 bs: 1000
 prefix: ''
 n_degree: 10

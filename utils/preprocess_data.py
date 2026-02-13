@@ -1,4 +1,3 @@
-import json
 import numpy as np
 import pandas as pd
 import os
@@ -22,7 +21,7 @@ def preprocess_type_interactions(data_name):
             ts = float(e[3])
             label = float(e[4])  # int(e[3])
             feat = np.array([float(x) for x in e[5:-1]])
-            interaction_type = e[-1]
+            interaction_type = e[-1].split(".")[0]
 
             if interaction_type == '0':
                 edge_features_idx.append(len(edge_features))
@@ -44,7 +43,6 @@ def preprocess_type_interactions(data_name):
                           'ts': ts_list,
                           'label': label_list,
                           'type': type_list,
-                          # 'idx': idx_list,
                           'node_idx': node_features_idx,
                           # 'node_features': node_features,
                           'edge_idx': edge_features_idx,
@@ -155,6 +153,6 @@ parser.add_argument('--bipartite', action='store_true', help='Whether the graph 
 args = parser.parse_args()
 """
 
-data_name = "gab"
+data_name = "gab_with_synthetic"
 bipartite = False
 run(data_name, bipartite=bipartite)
