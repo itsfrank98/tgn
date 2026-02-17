@@ -65,9 +65,8 @@ class GraphEmbedding(EmbeddingModule):
     def __init__(self, node_features, edge_features, memory, neighbor_finder, time_encoder, n_layers,
                  n_node_features, n_edge_features, n_time_features, embedding_dimension, device,
                  n_heads=2, dropout=0.1, use_memory=True):
-        super(GraphEmbedding, self).__init__(node_features, edge_features, memory,
-                                             neighbor_finder, time_encoder, n_layers,
-                                             n_node_features, n_edge_features, n_time_features,
+        super(GraphEmbedding, self).__init__(node_features, edge_features, memory, neighbor_finder, time_encoder,
+                                             n_layers, n_node_features, n_edge_features, n_time_features,
                                              embedding_dimension, device, dropout)
 
         self.use_memory = use_memory
@@ -89,8 +88,7 @@ class GraphEmbedding(EmbeddingModule):
         timestamps_torch = torch.unsqueeze(torch.from_numpy(timestamps).float().to(self.device), dim=1)
 
         # query node always has the start time -> time span == 0
-        source_nodes_time_embedding = self.time_encoder(torch.zeros_like(
-            timestamps_torch))
+        source_nodes_time_embedding = self.time_encoder(torch.zeros_like(timestamps_torch))
 
         source_node_features = self.node_features[source_nodes_torch, :]
 
@@ -205,7 +203,7 @@ class GraphAttentionEmbedding(GraphEmbedding):
             n_head=n_heads,
             dropout=dropout,
             output_dimension=n_node_features)
-            for _ in range(n_layers)])
+            for _ in range(n_layers)]).to(self.device)
 
     def aggregate(self, n_layer, source_node_features, source_nodes_time_embedding,
                   neighbor_embeddings,

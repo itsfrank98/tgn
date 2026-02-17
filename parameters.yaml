@@ -1,4 +1,5 @@
 data: "gab_with_synthetic"
+load_model: True
 bs: 1000
 prefix: ''
 n_degree: 10

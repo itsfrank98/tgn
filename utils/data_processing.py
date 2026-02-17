@@ -66,8 +66,8 @@ def get_data_with_interaction(dataset_name, different_new_nodes_between_val_and_
     assert len(train_node_set & new_test_node_set) == 0
     new_node_set = node_set - train_node_set
 
-    val_mask = np.logical_and(timestamps <= test_time, timestamps > val_time, timestamps < inf_time)
-    test_mask = np.logical_and(timestamps > test_time, timestamps < inf_time)
+    val_mask = timestamps == val_time
+    test_mask = np.logical_and(timestamps >= test_time, timestamps < inf_time)
     inference_mask = timestamps >= inf_time
 
     if different_new_nodes_between_val_and_test:
@@ -105,6 +105,11 @@ def get_data_with_interaction(dataset_name, different_new_nodes_between_val_and_
                     global_idxs=global_idx[new_node_test_mask], edge_idxs=edge_idxs[new_node_test_mask], node_idxs=node_idxs[new_node_test_mask],
                     labels=labels[new_node_test_mask], interaction_types=types[new_node_test_mask])
 
+    inference_data = Data(sources=sources[inference_mask], destinations=destinations[inference_mask],
+                          timestamps=timestamps[inference_mask], global_idxs=global_idx[inference_mask],
+                          edge_idxs=edge_idxs[inference_mask], node_idxs=node_idxs[inference_mask],
+                          labels=labels[inference_mask], interaction_types=types[inference_mask])
+
     print("The dataset has {} interactions, involving {} different nodes".format(full_data.n_interactions,
                                                                                  full_data.n_unique_nodes))
     print("The training dataset has {} interactions, involving {} different nodes".format(
@@ -120,7 +125,7 @@ def get_data_with_interaction(dataset_name, different_new_nodes_between_val_and_
     print("{} nodes were used for the inductive testing, i.e. are never seen during training".format(
         len(new_test_node_set)))
 
-    return full_data, train_data, val_data, test_data, new_node_val_data, new_node_test_data
+    return full_data, train_data, val_data, test_data, new_node_val_data, new_node_test_data, inference_data
 
 
 def get_data(dataset_name, different_new_nodes_between_val_and_test=False, randomize_features=False):

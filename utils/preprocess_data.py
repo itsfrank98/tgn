@@ -110,7 +110,7 @@ BASE_DIR = "/home/francesco/tgn/data"
 def run(data_name, bipartite=True):
     # Path("data/").mkdir(parents=True, exist_ok=True)
     PATH = os.path.join(BASE_DIR, f"{data_name}.csv")
-    OUT_DF = os.path.join(BASE_DIR, f"ml_{data_name}_2.csv")
+    OUT_DF = os.path.join(BASE_DIR, f"ml_{data_name}.csv")
     OUT_EDGE_FEAT = os.path.join(BASE_DIR, f"ml_{data_name}_edge.npy")
     OUT_NODE_FEAT = os.path.join(BASE_DIR, f"ml_{data_name}_node.npy")
 

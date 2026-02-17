@@ -1,6 +1,7 @@
 import math
 import numpy as np
 import torch
+from itertools import combinations
 from sklearn.metrics import average_precision_score, roc_auc_score
 
 
@@ -65,6 +66,64 @@ def eval_edge_prediction(model, negative_edge_sampler, data, n_neighbors, batch_
 
     return np.mean(val_ap), np.mean(val_auc)
 
+
+def predict_connections(model, data, t_query, prob_threshold=0.5, batch_size=200):
+    # Step 1: Reset state
+    model.latest_node_features.copy_(model.node_raw_features)
+    if model.use_memory:
+        model.memory.reset_memory_states()
+
+    # Step 2: Process node-wise events
+    TEST_BATCH_SIZE = batch_size
+    num_test_instance = len(data.sources)
+    num_test_batch = math.ceil(num_test_instance / TEST_BATCH_SIZE)
+    predicted_edges = []
+    for k in range(num_test_batch):
+        s_idx = k * TEST_BATCH_SIZE
+        e_idx = min(num_test_instance, s_idx + TEST_BATCH_SIZE)
+
+        sources_batch = data.sources[s_idx:e_idx]
+        node_idxs_batch = data.node_idxs[s_idx:e_idx]
+        timestamps_batch = data.timestamps[s_idx:e_idx]
+        size = len(sources_batch)
+
+        if hasattr(data, 'interaction_types'):
+            interaction_types_batch = data.interaction_types[s_idx:e_idx]
+            for j in range(size):
+                t = interaction_types_batch[j]
+                if t == 1:
+                    node = sources_batch[j]
+                    feats = model.node_raw_features[node_idxs_batch][j]
+                    timestamp = timestamps_batch[j]
+                    model.process_node_wise_event(node=node, timestamp=timestamp, new_feature=feats)
+        """for event in sorted_node_wise_events:
+            feat_vec = torch.from_numpy(event.feat_vec).float().to(model.device)
+            model.process_node_wise_event(event.node_id, event.ts, feat_vec)"""
+
+        # Step 3: Compute embeddings
+        model.eval()
+        with torch.no_grad():
+            nodes_tensor = torch.tensor(sources_batch).to(model.device)
+            ts_tensor = torch.full_like(nodes_tensor, t_query, dtype=torch.float)
+            embeddings = model.embedding_module.compute_embedding(
+                memory=model.memory,
+                source_nodes=sources_batch,
+                timestamps=timestamps_batch,
+                n_neighbors=0,  # no neighbors for isolated
+                n_layers=model.n_layers,
+            )  # shape [len(nodes), embed_dim]
+
+        # Step 4: Predict pairs
+        for i, j in combinations(range(len(nodes_tensor)), 2):
+            z_i = embeddings[i].unsqueeze(0)
+            z_j = embeddings[j].unsqueeze(0)
+            prob = model.affinity_score(z_i, z_j).sigmoid().item()
+            if prob > prob_threshold:
+                predicted_edges.append((sources_batch[i], sources_batch[j], prob))
+
+    # Sort by confidence
+        predicted_edges.sort(key=lambda x: x[2], reverse=True)
+    return predicted_edges
 
 def eval_node_classification(tgn, decoder, data, edge_idxs, batch_size, n_neighbors):
     pred_prob = np.zeros(len(data.sources))

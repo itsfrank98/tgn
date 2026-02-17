@@ -42,7 +42,7 @@ class TGN(torch.nn.Module):
     self.dyrep = dyrep
 
     self.use_memory = use_memory
-    self.time_encoder = TimeEncode(dimension=self.n_node_features)
+    self.time_encoder = TimeEncode(dimension=self.n_node_features).to(self.device)
     self.memory = None
 
     self.mean_time_shift_src = mean_time_shift_src
