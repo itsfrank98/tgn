@@ -3,6 +3,7 @@ import random
 import pandas as pd
 
 
+
 class Data:
     def __init__(self, sources, destinations, timestamps, edge_idxs, labels, interaction_types=None, global_idxs=None,
                  node_idxs=None):
@@ -18,13 +19,14 @@ class Data:
         self.node_idxs = node_idxs
         self.global_idxs = global_idxs
 
-def get_data_with_interaction(dataset_name, different_new_nodes_between_val_and_test=False):
+def get_data_with_interaction(dataset_name, different_new_nodes_between_val_and_test=False, consider_synthetic=False):
     ### Load data and train val test split
     graph_df = pd.read_csv('./data/ml_{}.csv'.format(dataset_name))
     graph_df = graph_df.drop(columns=['Unnamed: 0'])
-
-    val_time, test_time = list(np.quantile(graph_df.ts, [0.70, 0.85]))
+    #val_time, test_time = list(np.quantile(graph_df.ts, [0.70, 0.85]))
     val_time = 7.0
+    test_time = 8.0
+
     inf_time = 10.0     # snapshots 10, 11, 12 are synthetic and used for inference
     sources = graph_df.u.values
     destinations = graph_df.i.values
@@ -68,7 +70,7 @@ def get_data_with_interaction(dataset_name, different_new_nodes_between_val_and_
 
     val_mask = timestamps == val_time
     test_mask = np.logical_and(timestamps >= test_time, timestamps < inf_time)
-    inference_mask = timestamps >= inf_time
+
 
     if different_new_nodes_between_val_and_test:
         n_new_nodes = len(new_test_node_set) // 2
@@ -104,11 +106,14 @@ def get_data_with_interaction(dataset_name, different_new_nodes_between_val_and_
     new_node_test_data = Data(sources=sources[new_node_test_mask], destinations=destinations[new_node_test_mask], timestamps=timestamps[new_node_test_mask],
                     global_idxs=global_idx[new_node_test_mask], edge_idxs=edge_idxs[new_node_test_mask], node_idxs=node_idxs[new_node_test_mask],
                     labels=labels[new_node_test_mask], interaction_types=types[new_node_test_mask])
-
-    inference_data = Data(sources=sources[inference_mask], destinations=destinations[inference_mask],
-                          timestamps=timestamps[inference_mask], global_idxs=global_idx[inference_mask],
-                          edge_idxs=edge_idxs[inference_mask], node_idxs=node_idxs[inference_mask],
-                          labels=labels[inference_mask], interaction_types=types[inference_mask])
+    if consider_synthetic:
+        inference_mask = timestamps >= inf_time
+        inference_data = Data(sources=sources[inference_mask], destinations=destinations[inference_mask],
+                              timestamps=timestamps[inference_mask], global_idxs=global_idx[inference_mask],
+                              edge_idxs=edge_idxs[inference_mask], node_idxs=node_idxs[inference_mask],
+                              labels=labels[inference_mask], interaction_types=types[inference_mask])
+    else:
+        inference_data = None
 
     print("The dataset has {} interactions, involving {} different nodes".format(full_data.n_interactions,
                                                                                  full_data.n_unique_nodes))

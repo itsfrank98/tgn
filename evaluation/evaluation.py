@@ -1,8 +1,9 @@
 import math
 import numpy as np
 import torch
-from itertools import combinations
+from itertools import permutations
 from sklearn.metrics import average_precision_score, roc_auc_score
+from tqdm import tqdm
 
 
 def eval_edge_prediction(model, negative_edge_sampler, data, n_neighbors, batch_size=200):
@@ -67,7 +68,7 @@ def eval_edge_prediction(model, negative_edge_sampler, data, n_neighbors, batch_
     return np.mean(val_ap), np.mean(val_auc)
 
 
-def predict_connections(model, data, t_query, prob_threshold=0.5, batch_size=200):
+def predict_connections(model, data, prob_threshold=0.5, batch_size=200):
     # Step 1: Reset state
     model.latest_node_features.copy_(model.node_raw_features)
     if model.use_memory:
@@ -104,22 +105,21 @@ def predict_connections(model, data, t_query, prob_threshold=0.5, batch_size=200
         model.eval()
         with torch.no_grad():
             nodes_tensor = torch.tensor(sources_batch).to(model.device)
-            ts_tensor = torch.full_like(nodes_tensor, t_query, dtype=torch.float)
             embeddings = model.embedding_module.compute_embedding(
                 memory=model.memory,
                 source_nodes=sources_batch,
                 timestamps=timestamps_batch,
-                n_neighbors=0,  # no neighbors for isolated
+                n_neighbors=10,  # no neighbors for isolated
                 n_layers=model.n_layers,
             )  # shape [len(nodes), embed_dim]
 
         # Step 4: Predict pairs
-        for i, j in combinations(range(len(nodes_tensor)), 2):
+        for i, j in tqdm(permutations(range(len(nodes_tensor)), 2)):
             z_i = embeddings[i].unsqueeze(0)
             z_j = embeddings[j].unsqueeze(0)
             prob = model.affinity_score(z_i, z_j).sigmoid().item()
-            if prob > prob_threshold:
-                predicted_edges.append((sources_batch[i], sources_batch[j], prob))
+            #if prob > prob_threshold:
+            predicted_edges.append((sources_batch[i], sources_batch[j], prob))
 
     # Sort by confidence
         predicted_edges.sort(key=lambda x: x[2], reverse=True)

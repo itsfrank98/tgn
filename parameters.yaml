@@ -1,5 +1,9 @@
-data: "gab_with_synthetic"
-load_model: True
+data: "gab_shuffled"
+consider_synthetic: False
+load_model: False
+use_memory: False
+memory_dim: 10
+message_function: "mlp"
 bs: 1000
 prefix: ''
 n_degree: 10
@@ -14,14 +18,11 @@ gpu: 0
 node_dim: 100
 time_dim: 100
 backprop_every: 1
-use_memory: False
 embedding_module: "graph_attention"
-message_function: "identity"
 memory_updater: "gru"
 aggregator: "last"
 memory_update_at_end: False
 message_dim: 100
-memory_dim: 172
 different_new_nodes: False
 uniform: False
 randomize_features: False

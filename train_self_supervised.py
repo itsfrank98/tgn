@@ -88,6 +88,7 @@ USE_MEMORY = args["use_memory"]
 MESSAGE_DIM = args["message_dim"]
 MEMORY_DIM = args["memory_dim"]
 LOAD_MODEL = args["load_model"]
+CONSIDER_SYNTHETIC = args["consider_synthetic"]
 
 Path("./saved_models/").mkdir(parents=True, exist_ok=True)
 Path("./saved_checkpoints/").mkdir(parents=True, exist_ok=True)
@@ -114,7 +115,8 @@ logger.info(args)
 ### Extract data for training, validation and testing
 if DATA.__contains__("gab"):
     full_data, train_data, val_data, test_data, new_node_val_data, new_node_test_data, inference_data = get_data_with_interaction(
-        DATA, different_new_nodes_between_val_and_test=args["different_new_nodes"]) #
+        DATA, different_new_nodes_between_val_and_test=args["different_new_nodes"], consider_synthetic=CONSIDER_SYNTHETIC) #
+
     edge_features = np.load(f"data/ml_{DATA}_edge.npy")
     node_features = np.load(f"data/ml_{DATA}_node.npy")
 
@@ -136,7 +138,7 @@ device = torch.device(device_string)
 # Initialize negative samplers. Set seeds for validation and testing so negatives are the same
 # across different runs
 # NB: in the inductive setting, negatives are sampled only amongst other new nodes
-if DATA == "gab":
+if DATA.__contains__("gab"):
     train_edge_mask = train_data.interaction_types == 0
     val_edge_mask = val_data.interaction_types == 0
     test_edge_mask = test_data.interaction_types == 0
@@ -177,8 +179,10 @@ if LOAD_MODEL:
               use_destination_embedding_in_message=args["use_destination_embedding_in_message"],
               use_source_embedding_in_message=args["use_source_embedding_in_message"], dyrep=args["dyrep"])
     tgn.load_state_dict(torch.load(MODEL_SAVE_PATH))
-    connections = predict_connections(model=tgn, data=inference_data, t_query=10, batch_size=1000)
-
+    connections = predict_connections(model=tgn, data=inference_data, batch_size=2000)
+    print(len(connections))
+    with open("connections.pkl", "wb") as f:
+        pickle.dump(connections, f)
 
 else:
     for i in range(args["n_runs"]):
@@ -222,7 +226,7 @@ else:
             if USE_MEMORY:
                 tgn.memory.__init_memory__()
 
-            if DATA == "gab":
+            if DATA.__contains__("gab"):
                 tgn.latest_node_features.copy_(tgn.node_raw_features)
 
             # Train using only training graph
@@ -231,13 +235,13 @@ else:
 
             logger.info('start {} epoch'.format(epoch))
             for k in range(0, num_batch, args["backprop_every"]):
+
                 loss = 0
                 optimizer.zero_grad()
 
                 # Custom loop to allow to perform backpropagation only every a certain number of batches
                 for j in range(args["backprop_every"]):
                     batch_idx = k + j
-
                     if batch_idx >= num_batch:
                         continue
 
@@ -250,7 +254,7 @@ else:
                     timestamps_batch = train_data.timestamps[start_idx:end_idx]
                     size = len(sources_batch)
 
-                    if DATA == "gab":
+                    if DATA.__contains__("gab"):
                         interaction_types_batch = train_data.interaction_types[start_idx:end_idx]
                         for j in range(size):
                             t = interaction_types_batch[j]
@@ -282,6 +286,7 @@ else:
                                                                             timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS)
 
                         loss += criterion(pos_prob.squeeze(), pos_label) + criterion(neg_prob.squeeze(), neg_label)
+
 
                 loss /= args["backprop_every"]
                 if loss > 0:
