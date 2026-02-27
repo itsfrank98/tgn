@@ -116,6 +116,10 @@ logger.info(args)
 if DATA.__contains__("gab"):
     full_data, train_data, val_data, test_data, new_node_val_data, new_node_test_data, inference_data = get_data_with_interaction(
         DATA, different_new_nodes_between_val_and_test=args["different_new_nodes"], consider_synthetic=CONSIDER_SYNTHETIC) #
+    inference_data = full_data
+
+    """full_data1, train_data1, val_data1, test_data1, new_node_val_data1, new_node_test_data1, inference_data1 = get_data_with_interaction(
+        "gab1", different_new_nodes_between_val_and_test=args["different_new_nodes"], consider_synthetic=CONSIDER_SYNTHETIC)"""
 
     edge_features = np.load(f"data/ml_{DATA}_edge.npy")
     node_features = np.load(f"data/ml_{DATA}_node.npy")
@@ -181,7 +185,7 @@ if LOAD_MODEL:
     tgn.load_state_dict(torch.load(MODEL_SAVE_PATH))
     connections = predict_connections(model=tgn, data=inference_data, batch_size=2000)
     print(len(connections))
-    with open("connections.pkl", "wb") as f:
+    with open("connections_full_net.pkl", "wb") as f:
         pickle.dump(connections, f)
 
 else:

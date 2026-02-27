@@ -21,8 +21,7 @@ class Data:
 
 def get_data_with_interaction(dataset_name, different_new_nodes_between_val_and_test=False, consider_synthetic=False):
     ### Load data and train val test split
-    graph_df = pd.read_csv('./data/ml_{}.csv'.format(dataset_name))
-    graph_df = graph_df.drop(columns=['Unnamed: 0'])
+    graph_df = pd.read_csv('./data/ml_{}.csv'.format(dataset_name)).drop(columns=['Unnamed: 0'])
     #val_time, test_time = list(np.quantile(graph_df.ts, [0.70, 0.85]))
     val_time = 7.0
     test_time = 8.0

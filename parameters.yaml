@@ -1,6 +1,6 @@
-data: "gab_shuffled"
-consider_synthetic: False
-load_model: False
+data: "gab1"
+consider_synthetic: True
+load_model: True
 use_memory: False
 memory_dim: 10
 message_function: "mlp"

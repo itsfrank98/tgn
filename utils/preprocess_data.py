@@ -153,6 +153,6 @@ parser.add_argument('--bipartite', action='store_true', help='Whether the graph 
 args = parser.parse_args()
 """
 
-data_name = "gab_shuffled"
+data_name = "gab_shuffled3"
 bipartite = False
 run(data_name, bipartite=bipartite)

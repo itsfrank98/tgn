@@ -1,7 +1,7 @@
 import math
 import numpy as np
 import torch
-from itertools import permutations
+from itertools import permutations, combinations
 from sklearn.metrics import average_precision_score, roc_auc_score
 from tqdm import tqdm
 
@@ -68,7 +68,7 @@ def eval_edge_prediction(model, negative_edge_sampler, data, n_neighbors, batch_
     return np.mean(val_ap), np.mean(val_auc)
 
 
-def predict_connections(model, data, prob_threshold=0.5, batch_size=200):
+def predict_connections(model, data, real_user_ids, batch_size=200):
     # Step 1: Reset state
     model.latest_node_features.copy_(model.node_raw_features)
     if model.use_memory:
@@ -79,6 +79,7 @@ def predict_connections(model, data, prob_threshold=0.5, batch_size=200):
     num_test_instance = len(data.sources)
     num_test_batch = math.ceil(num_test_instance / TEST_BATCH_SIZE)
     predicted_edges = []
+
     for k in range(num_test_batch):
         s_idx = k * TEST_BATCH_SIZE
         e_idx = min(num_test_instance, s_idx + TEST_BATCH_SIZE)
@@ -101,7 +102,62 @@ def predict_connections(model, data, prob_threshold=0.5, batch_size=200):
             feat_vec = torch.from_numpy(event.feat_vec).float().to(model.device)
             model.process_node_wise_event(event.node_id, event.ts, feat_vec)"""
 
-        # Step 3: Compute embeddings
+    # Step 3: Compute embeddings
+    new_user_ids = np.unique(data.sources)
+    if real_user_ids is None:
+        all_nodes = new_user_ids
+    else:
+        real_user_ids = np.array(real_user_ids)
+        all_nodes = np.unique(np.concatenate((real_user_ids, new_user_ids)))
+
+    embeddings_dict = {}
+    # Batch compute embeddings to save memory
+    for start in range(0, len(all_nodes), batch_size):
+        end = min(start + batch_size, len(all_nodes))
+        batch_nodes = all_nodes[start:end]
+
+        nodes_tensor = torch.tensor(batch_nodes, dtype=torch.long, device=model.device)
+        # Use max timestamp from new-user data as query time (or pass t_query)
+        ts_query = data.timestamps.max()
+        ts_tensor = torch.full_like(nodes_tensor, ts_query, dtype=torch.float)
+
+        batch_embeddings = model.embedding_module.compute_embedding(
+            memory=model.memory,
+            source_nodes=batch_nodes,
+            timestamps=ts_tensor.cpu().numpy(),  # usually expects numpy
+            n_neighbors=10,
+            n_layers=model.n_layers,
+        )  # shape [batch_len, embed_dim]
+
+        for idx, node_id in enumerate(batch_nodes):
+            embeddings_dict[node_id] = batch_embeddings[idx]
+
+    # Convert to tensor for easier computation
+    all_embeddings = torch.stack([embeddings_dict[nid] for nid in all_nodes])
+    pairs = []
+    new_mask = np.isin(all_nodes, new_user_ids)
+    new_indices = np.where(new_mask)[0]
+    exist_indices = np.where(~new_mask)[0]
+
+    # All new-new pairs
+    pairs.extend(permutations(new_indices, 2))
+    print(f"Computing {len(pairs)} pairs")
+
+    for n_idx in new_indices:
+        for e_idx in exist_indices:
+            pairs.append((n_idx, e_idx))
+            pairs.append((e_idx, n_idx))
+
+    for i, j in tqdm(pairs, desc="Predicting pairs"):
+        z_i = all_embeddings[i].unsqueeze(0)
+        z_j = all_embeddings[j].unsqueeze(0)
+        prob = model.affinity_score(z_i, z_j).sigmoid().item()
+
+        node_i = all_nodes[i]
+        node_j = all_nodes[j]
+        predicted_edges.append((node_i, node_j, prob))
+
+    if real_user_ids is None:
         model.eval()
         with torch.no_grad():
             nodes_tensor = torch.tensor(sources_batch).to(model.device)
@@ -121,8 +177,9 @@ def predict_connections(model, data, prob_threshold=0.5, batch_size=200):
             #if prob > prob_threshold:
             predicted_edges.append((sources_batch[i], sources_batch[j], prob))
 
-    # Sort by confidence
-        predicted_edges.sort(key=lambda x: x[2], reverse=True)
+        # Sort by confidence
+
+    predicted_edges.sort(key=lambda x: x[2], reverse=True)
     return predicted_edges
 
 def eval_node_classification(tgn, decoder, data, edge_idxs, batch_size, n_neighbors):
