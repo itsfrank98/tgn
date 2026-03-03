@@ -98,17 +98,14 @@ def predict_connections(model, data, real_user_ids, batch_size=200):
                     feats = model.node_raw_features[node_idxs_batch][j]
                     timestamp = timestamps_batch[j]
                     model.process_node_wise_event(node=node, timestamp=timestamp, new_feature=feats)
-        """for event in sorted_node_wise_events:
-            feat_vec = torch.from_numpy(event.feat_vec).float().to(model.device)
-            model.process_node_wise_event(event.node_id, event.ts, feat_vec)"""
 
     # Step 3: Compute embeddings
-    new_user_ids = np.unique(data.sources)
+    synthetic_user_ids = np.unique(data.sources)
     if real_user_ids is None:
-        all_nodes = new_user_ids
+        all_nodes = synthetic_user_ids
     else:
         real_user_ids = np.array(real_user_ids)
-        all_nodes = np.unique(np.concatenate((real_user_ids, new_user_ids)))
+        all_nodes = np.unique(np.concatenate((real_user_ids, synthetic_user_ids)))
 
     embeddings_dict = {}
     # Batch compute embeddings to save memory
@@ -135,7 +132,7 @@ def predict_connections(model, data, real_user_ids, batch_size=200):
     # Convert to tensor for easier computation
     all_embeddings = torch.stack([embeddings_dict[nid] for nid in all_nodes])
     pairs = []
-    new_mask = np.isin(all_nodes, new_user_ids)
+    new_mask = np.isin(all_nodes, synthetic_user_ids)
     new_indices = np.where(new_mask)[0]
     exist_indices = np.where(~new_mask)[0]
 

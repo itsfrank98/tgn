@@ -1,9 +1,10 @@
-data: "gab1"
+data: "gab_with_synthetic"
 consider_synthetic: True
 load_model: True
 use_memory: False
 memory_dim: 10
 message_function: "mlp"
+negative_sampling_ratio: 2
 bs: 1000
 prefix: ''
 n_degree: 10
@@ -26,6 +27,12 @@ message_dim: 100
 different_new_nodes: False
 uniform: False
 randomize_features: False
-use_destination_embedding_in_message: False
-use_source_embedding_in_message: False
+use_destination_embedding_in_message: True
+use_source_embedding_in_message: True
 dyrep: False
+
+
+network_metrics_params:
+  real_network_src: "None"
+  synthetic_network_src: "connections_full_net.pkl"
+  threshold: .65

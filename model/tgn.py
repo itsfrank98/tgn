@@ -123,11 +123,14 @@ class TGN(torch.nn.Module):
         layer
         :return: Temporal embeddings for sources, destinations and negatives
         """
-
+        num_pos = len(source_nodes)
+        num_neg_per_pos = len(negative_nodes) // num_pos
         n_samples = len(source_nodes)
         nodes = np.concatenate([source_nodes, destination_nodes, negative_nodes])
         positives = np.concatenate([source_nodes, destination_nodes])
-        timestamps = np.concatenate([edge_times, edge_times, edge_times])
+        pos_timestamps = np.concatenate([edge_times, edge_times])  # for sources + destinations
+        neg_timestamps = np.repeat(edge_times, num_neg_per_pos)  # for negatives
+        timestamps = np.concatenate([pos_timestamps, neg_timestamps])
 
         memory = None
         time_diffs = None
@@ -155,9 +158,8 @@ class TGN(torch.nn.Module):
 
         # Compute the embeddings using the embedding module
         node_embedding = self.embedding_module.compute_embedding(memory=memory, source_nodes=nodes,
-                                                                 timestamps=timestamps,
-                                                                 n_layers=self.n_layers, n_neighbors=n_neighbors,
-                                                                 time_diffs=time_diffs)
+                                                                 timestamps=timestamps, n_layers=self.n_layers,
+                                                                 n_neighbors=n_neighbors, time_diffs=time_diffs)
 
         source_node_embedding = node_embedding[:n_samples]
         destination_node_embedding = node_embedding[n_samples: 2 * n_samples]
@@ -254,12 +256,13 @@ class TGN(torch.nn.Module):
         :return: Probabilities for both the positive and negative edges
         """
         n_samples = len(source_nodes)
+        negative_sampling_ratio = len(negative_nodes) // n_samples
         source_node_embedding, destination_node_embedding, negative_node_embedding = self.compute_temporal_embeddings(
             source_nodes, destination_nodes, negative_nodes, edge_times, edge_idxs, n_neighbors)
 
-        score = self.affinity_score(torch.cat([source_node_embedding, source_node_embedding], dim=0),
-                                    torch.cat([destination_node_embedding,
-                                               negative_node_embedding])).squeeze(dim=0)
+        source_embeddings_negative = torch.cat([source_node_embedding]*negative_sampling_ratio, dim=0)
+        score = self.affinity_score(torch.cat([source_node_embedding, source_embeddings_negative], dim=0),
+                                    torch.cat([destination_node_embedding, negative_node_embedding])).squeeze(dim=0)
         pos_score = score[:n_samples]
         neg_score = score[n_samples:]
 

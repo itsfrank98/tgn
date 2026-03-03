@@ -77,6 +77,7 @@ NUM_NEIGHBORS = args["n_degree"]
 NUM_NEG = 1
 NUM_EPOCH = args["n_epoch"]
 NUM_HEADS = args["n_head"]
+NEG_SAMPLING_RATIO = args["negative_sampling_ratio"]
 DROP_OUT = args["drop_out"]
 GPU = args["gpu"]
 DATA = args["data"]
@@ -92,7 +93,11 @@ CONSIDER_SYNTHETIC = args["consider_synthetic"]
 
 Path("./saved_models/").mkdir(parents=True, exist_ok=True)
 Path("./saved_checkpoints/").mkdir(parents=True, exist_ok=True)
-MODEL_SAVE_PATH = f'./saved_models/{args["prefix"]}-{args["data"]}.pth'
+if CONSIDER_SYNTHETIC:
+    suffix = "with_synthetic"
+else:
+    suffix = "without_synthetic"
+MODEL_SAVE_PATH = f'./saved_models/{args["prefix"]}-{args["data"]}-{NEG_SAMPLING_RATIO}-{suffix}.pth'
 get_checkpoint_path = lambda \
         epoch: f'./saved_checkpoints/{args["prefix"]}-{args["data"]}-{epoch}.pth'
 
@@ -116,7 +121,7 @@ logger.info(args)
 if DATA.__contains__("gab"):
     full_data, train_data, val_data, test_data, new_node_val_data, new_node_test_data, inference_data = get_data_with_interaction(
         DATA, different_new_nodes_between_val_and_test=args["different_new_nodes"], consider_synthetic=CONSIDER_SYNTHETIC) #
-    inference_data = full_data
+    #inference_data = full_data
 
     """full_data1, train_data1, val_data1, test_data1, new_node_val_data1, new_node_test_data1, inference_data1 = get_data_with_interaction(
         "gab1", different_new_nodes_between_val_and_test=args["different_new_nodes"], consider_synthetic=CONSIDER_SYNTHETIC)"""
@@ -183,9 +188,10 @@ if LOAD_MODEL:
               use_destination_embedding_in_message=args["use_destination_embedding_in_message"],
               use_source_embedding_in_message=args["use_source_embedding_in_message"], dyrep=args["dyrep"])
     tgn.load_state_dict(torch.load(MODEL_SAVE_PATH))
-    connections = predict_connections(model=tgn, data=inference_data, batch_size=2000)
+    real_user_ids = list(set(list(train_data.sources) + list(train_data.destinations)))
+    connections = predict_connections(model=tgn, data=inference_data, batch_size=2000, real_user_ids=None)  #real_user_ids
     print(len(connections))
-    with open("connections_full_net.pkl", "wb") as f:
+    with open(f"connections_{NEG_SAMPLING_RATIO}.pkl", "wb") as f:
         pickle.dump(connections, f)
 
 else:
@@ -278,18 +284,22 @@ else:
                         else:
                             size = 0
 
-                    _, negatives_batch = train_rand_sampler.sample(size)
+                    _, negatives_batch = train_rand_sampler.sample(size*NEG_SAMPLING_RATIO)
 
                     if size > 0:
                         with torch.no_grad():
                             pos_label = torch.ones(size, dtype=torch.float, device=device)
-                            neg_label = torch.zeros(size, dtype=torch.float, device=device)
+                            neg_label = torch.zeros(size*NEG_SAMPLING_RATIO, dtype=torch.float, device=device)
 
                         tgn = tgn.train()
+                        pos_timestamps = timestamps_batch
+                        timestamps = np.repeat(timestamps_batch, NEG_SAMPLING_RATIO)
                         pos_prob, neg_prob = tgn.compute_edge_probabilities(sources_batch, destinations_batch, negatives_batch,
                                                                             timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS)
 
-                        loss += criterion(pos_prob.squeeze(), pos_label) + criterion(neg_prob.squeeze(), neg_label)
+                        pos_loss = criterion(pos_prob.squeeze(), pos_label)
+                        neg_loss = criterion(neg_prob.squeeze(), neg_label) / NEG_SAMPLING_RATIO
+                        loss += pos_loss + neg_loss
 
 
                 loss /= args["backprop_every"]
