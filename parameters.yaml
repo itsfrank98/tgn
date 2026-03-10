@@ -4,7 +4,7 @@ load_model: True
 use_memory: False
 memory_dim: 10
 message_function: "mlp"
-negative_sampling_ratio: 2
+negative_sampling_ratio: 1
 bs: 1000
 prefix: ''
 n_degree: 10
@@ -33,6 +33,6 @@ dyrep: False
 
 
 network_metrics_params:
-  real_network_src: "None"
+  real_network_src: "data/social_network.edg"
   synthetic_network_src: "connections_full_net.pkl"
   threshold: .65
