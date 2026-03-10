@@ -5,7 +5,9 @@ from tqdm import tqdm
 from pathlib import Path
 import argparse
 import pickle
-
+BASE_DIR = "/home/francesco/tgn/data"
+data_name = "gab_baseline"      # ---> fatto preprocessing per il caso baseline
+bipartite = False
 
 def preprocess_type_interactions(data_name):
     u_list, i_list, ts_list, label_list, idx_list, type_list, node_features, edge_features = [], [], [], [], [], [], [], []
@@ -104,7 +106,8 @@ def reindex(df, bipartite=True):
     return new_df
 
 
-BASE_DIR = "/home/francesco/tgn/data"
+
+
 
 
 def run(data_name, bipartite=True):
@@ -135,24 +138,4 @@ def run(data_name, bipartite=True):
         np.save(OUT_NODE_FEAT, node_features)
         df.to_csv(OUT_DF)
 
-        """
-        empty = np.zeros(edge_feat.shape[1])[np.newaxis, :]
-        feat = np.vstack([empty, edge_feat])
-    
-        np.save(OUT_FEAT, feat)
-        np.save(OUT_NODE_FEAT, node_feat)
-        """
-
-
-"""
-parser = argparse.ArgumentParser('Interface for TGN data preprocessing')
-parser.add_argument('--data', type=str, help='Dataset name (eg. wikipedia or reddit)',
-                    default='wikipedia')
-parser.add_argument('--bipartite', action='store_true', help='Whether the graph is bipartite')
-
-args = parser.parse_args()
-"""
-
-data_name = "gab_shuffled3"
-bipartite = False
 run(data_name, bipartite=bipartite)

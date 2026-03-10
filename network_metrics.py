@@ -37,34 +37,18 @@ def compute_network_metrics(G: nx.DiGraph):
     print(f"  Weakly Connected:   {nx.is_weakly_connected(G)}")
     print(f"  Num SCC:            {nx.number_strongly_connected_components(G)}")
     print(f"  Num WCC:            {nx.number_weakly_connected_components(G)}")
-    # --- Clustering ---
-    """print("\n🔺 Clustering")
-    avg_clustering = nx.average_clustering(G)  # uses directed clustering by default
-    print(f"  Avg Clustering Coeff (directed): {avg_clustering:.4f}")"""
     # --- Centrality ---
     print("\n🎯 Centrality (averages)")
     in_centrality = nx.in_degree_centrality(G)
-    out_centrality = nx.out_degree_centrality(G)
-    betweenness = nx.betweenness_centrality(G)
-    closeness = nx.closeness_centrality(G)
-    try:
-        eigenvector = nx.eigenvector_centrality(G, max_iter=1000)
-        print(f"  Avg Eigenvector Centrality: {np.mean(list(eigenvector.values())):.4f}")
-    except nx.PowerIterationFailedConvergence:
-        print("  Avg Eigenvector Centrality: (did not converge)")
     print(f"  Avg In-Degree Centrality:   {np.mean(list(in_centrality.values())):.4f}")
+    out_centrality = nx.out_degree_centrality(G)
     print(f"  Avg Out-Degree Centrality:  {np.mean(list(out_centrality.values())):.4f}")
-    print(f"  Avg Betweenness Centrality: {np.mean(list(betweenness.values())):.4f}")
-    print(f"  Avg Closeness Centrality:   {np.mean(list(closeness.values())):.4f}")
     # --- Path lengths (on largest SCC for validity) ---
     print("\n📏 Path Lengths (largest SCC)")
     largest_scc = max(nx.strongly_connected_components(G), key=len)
     SCC = G.subgraph(largest_scc)
-    #if len(SCC) > 1:
     avg_path = nx.average_shortest_path_length(SCC)
-    diameter = nx.diameter(SCC)
     print(f"  Avg Shortest Path Length:  {avg_path:.4f}")
-    print(f"  Diameter:                  {diameter}")
     communities = louvain_communities(G, seed=123)
     modularity = nx.community.modularity(G, communities)
     print(f"  Modularity: {modularity}")
@@ -85,7 +69,7 @@ if real_net_src != "None":
             real_network.append((e1, e2))
 
 eel = [(e[0], e[1]) for e in el if e[2] > threshold]
-complete_network = real_network + eel
+complete_network = real_network  + eel
 G = nx.DiGraph()
-G.add_edges_from(eel)
+G.add_edges_from(real_network)
 compute_network_metrics(G)

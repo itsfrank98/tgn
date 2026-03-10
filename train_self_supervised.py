@@ -13,7 +13,8 @@ from evaluation.evaluation import eval_edge_prediction, predict_connections
 from model.tgn import TGN
 from utils.utils import EarlyStopMonitor, RandEdgeSampler, get_neighbor_finder
 from utils.data_processing import get_data, compute_time_statistics, get_data_with_interaction
-
+import os
+print(os.getcwd())
 torch.manual_seed(0)
 np.random.seed(0)
 
@@ -123,9 +124,6 @@ if DATA.__contains__("gab"):
         DATA, different_new_nodes_between_val_and_test=args["different_new_nodes"], consider_synthetic=CONSIDER_SYNTHETIC) #
     #inference_data = full_data
 
-    """full_data1, train_data1, val_data1, test_data1, new_node_val_data1, new_node_test_data1, inference_data1 = get_data_with_interaction(
-        "gab1", different_new_nodes_between_val_and_test=args["different_new_nodes"], consider_synthetic=CONSIDER_SYNTHETIC)"""
-
     edge_features = np.load(f"data/ml_{DATA}_edge.npy")
     node_features = np.load(f"data/ml_{DATA}_node.npy")
 
@@ -136,7 +134,6 @@ else:
 
 # Initialize training neighbor finder to retrieve temporal graph
 train_ngh_finder = get_neighbor_finder(train_data, args["uniform"])
-# TODO ricalcola i validation/test set. al momento, size(val_data)=152148, size(test_data)=62971
 # Initialize validation and test neighbor finder to retrieve temporal graph
 full_ngh_finder = get_neighbor_finder(full_data, args["uniform"])
 

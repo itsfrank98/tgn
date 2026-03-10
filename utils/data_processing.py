@@ -23,8 +23,8 @@ def get_data_with_interaction(dataset_name, different_new_nodes_between_val_and_
     ### Load data and train val test split
     graph_df = pd.read_csv('./data/ml_{}.csv'.format(dataset_name)).drop(columns=['Unnamed: 0'])
     #val_time, test_time = list(np.quantile(graph_df.ts, [0.70, 0.85]))
-    val_time = 7.0
-    test_time = 8.0
+    val_time = 8.0
+    test_time = 9.0
 
     inf_time = 10.0     # snapshots 10, 11, 12 are synthetic and used for inference
     sources = graph_df.u.values
