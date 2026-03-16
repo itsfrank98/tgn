@@ -33,6 +33,10 @@ dyrep: False
 
 
 network_metrics_params:
-  real_network_src: "data/social_network.edg"
-  synthetic_network_src: "connections_full_net.pkl"
+  synthetic: True
+  sample_n_nodes: 50
+  compute_metrics: False
+  draw_network: True
+  real_network_src: #"data/clean_data/social_network.edg"
+  synthetic_network_src: "connections_2.pkl"
   threshold: .65

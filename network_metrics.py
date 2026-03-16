@@ -3,14 +3,22 @@ import networkx as nx
 from networkx.algorithms.community import louvain_communities
 import yaml
 import pickle
-
+import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
+import pandas as pd
+import random
 with open("parameters.yaml", 'r') as params_file:
     args = yaml.safe_load(params_file)
 
+
 net_params = args["network_metrics_params"]
-real_net_src = net_params["real_network_src"]
+real_network_src = net_params["real_network_src"]
+synthetic_network_src = net_params["synthetic_network_src"]
 threshold = net_params["threshold"]
-synthetic_network_src = f"connections_{args["negative_sampling_ratio"]}.pkl"
+compute_metrics = net_params["compute_metrics"]
+draw_network = net_params["draw_network"]
+nodes_to_sample = net_params["sample_n_nodes"]
+synthetic = net_params["synthetic"]
 
 def compute_network_metrics(G: nx.DiGraph):
     print("=" * 40)
@@ -55,21 +63,73 @@ def compute_network_metrics(G: nx.DiGraph):
 
     print("\n" + "=" * 40)
 
-with open(synthetic_network_src, "rb") as f:
-    el = pickle.load(f)
+def plot_network(G, color_map, leanings_lookup, title):
+    node_colors = [color_map[leanings_lookup[int(node)]] for node in G.nodes()]
 
+    # --- Plot ---
+    plt.figure(figsize=(8, 6))
 
+    pos = nx.spring_layout(G, k=1, seed=42)
+
+    nx.draw_networkx(G, pos=pos, node_color=node_colors, node_size=200, font_color="white", font_weight="bold",
+        edge_color="#cccccc", width=1.5, with_labels=False
+    )
+
+    legend_elements = [Patch(facecolor=v, label=k) for k, v in color_map.items()]
+    plt.legend(handles=legend_elements, loc="best", fontsize=11)
+
+    plt.title(title, fontsize=14)
+    plt.axis("off")
+    plt.tight_layout()
+    plt.show()
+
+eel = []
 real_network = []
-if real_net_src != "None":
-    with open(real_net_src, "rb") as f:
+nodes_with_connections = set()
+G = nx.DiGraph()
+if synthetic_network_src:
+    with open(synthetic_network_src, "rb") as f:
+        el = pickle.load(f)
+    eel += [(int(e[0]), int(e[1])) for e in el if e[2] > threshold]
+
+
+if real_network_src:
+    with open(real_network_src, "rb") as f:
         for l in f.readlines():
             e1, e2 = l.split()
             e1 = int(e1.strip())
             e2 = int(e2.strip())
-            real_network.append((e1, e2))
+            eel.append((e1, e2))
+            nodes_with_connections.add(e1)
+            nodes_with_connections.add(e2)
 
-eel = [(e[0], e[1]) for e in el if e[2] > threshold]
-complete_network = real_network  + eel
-G = nx.DiGraph()
-G.add_edges_from(real_network)
-compute_network_metrics(G)
+G.add_edges_from(eel)
+
+if compute_metrics:
+    compute_network_metrics(G)
+if draw_network:
+    color_mapping = {"far-left": "black", "far-right": "red", "right": "orange", "left": "blue", "center": "pink", "non-political": "green", "unknown": "magenta"}
+    if synthetic:
+        title = "Synthetic network by political leaning"
+        df = pd.read_csv("data/clean_data/synthetic_posts.csv", index_col=0)
+    else:
+        title = "Real network by political leaning"
+        df = pd.read_csv("data/clean_data/stance_mistral_real.csv", index_col=0)
+
+    leanings = df.drop_duplicates(subset="political_leaning")["political_leaning"].tolist()
+    df_nodes = df["account_id"].drop_duplicates().tolist()
+    G_new = G.copy()
+    for node in G.nodes():
+        if node not in df_nodes or (real_network_src and node not in nodes_with_connections):
+            G_new.remove_node(node)
+    if nodes_to_sample:
+        sampled_nodes = random.sample(list(G_new.nodes()), nodes_to_sample)
+        G_new = G_new.subgraph(sampled_nodes)
+    G = G_new.copy()
+    isolated_nodes = list(nx.isolates(G_new))
+    G.remove_nodes_from(isolated_nodes)
+
+    print(len(G))
+
+    leanings_lookup = df.set_index("account_id")["political_leaning"].to_dict()
+    plot_network(G, color_map=color_mapping, leanings_lookup=leanings_lookup, title="Synthetic Network by political leaning")
