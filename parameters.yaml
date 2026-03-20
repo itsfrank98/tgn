@@ -33,8 +33,8 @@ dyrep: False
 
 
 network_metrics_params:
-  synthetic: True
-  sample_n_nodes: 50
+
+  sample_n_nodes: 30
   compute_metrics: False
   draw_network: True
   real_network_src: #"data/clean_data/social_network.edg"

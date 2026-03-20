@@ -18,7 +18,7 @@ threshold = net_params["threshold"]
 compute_metrics = net_params["compute_metrics"]
 draw_network = net_params["draw_network"]
 nodes_to_sample = net_params["sample_n_nodes"]
-synthetic = net_params["synthetic"]
+#synthetic = net_params["synthetic"]
 
 def compute_network_metrics(G: nx.DiGraph):
     print("=" * 40)
@@ -70,6 +70,7 @@ def plot_network(G, color_map, leanings_lookup, title):
     plt.figure(figsize=(8, 6))
 
     pos = nx.spring_layout(G, k=1, seed=42)
+    pos = nx.circular_layout(G)
 
     nx.draw_networkx(G, pos=pos, node_color=node_colors, node_size=200, font_color="white", font_weight="bold",
         edge_color="#cccccc", width=1.5, with_labels=False
@@ -109,7 +110,8 @@ if compute_metrics:
     compute_network_metrics(G)
 if draw_network:
     color_mapping = {"far-left": "black", "far-right": "red", "right": "orange", "left": "blue", "center": "pink", "non-political": "green", "unknown": "magenta"}
-    if synthetic:
+
+    if synthetic_network_src:
         title = "Synthetic network by political leaning"
         df = pd.read_csv("data/clean_data/synthetic_posts.csv", index_col=0)
     else:
@@ -132,4 +134,4 @@ if draw_network:
     print(len(G))
 
     leanings_lookup = df.set_index("account_id")["political_leaning"].to_dict()
-    plot_network(G, color_map=color_mapping, leanings_lookup=leanings_lookup, title="Synthetic Network by political leaning")
+    plot_network(G, color_map=color_mapping, leanings_lookup=leanings_lookup, title=title+f", sampled {G.number_of_nodes()} nodes")
