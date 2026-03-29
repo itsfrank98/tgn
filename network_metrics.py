@@ -18,6 +18,7 @@ threshold = net_params["threshold"]
 compute_metrics = net_params["compute_metrics"]
 draw_network = net_params["draw_network"]
 nodes_to_sample = net_params["sample_n_nodes"]
+group_layout = net_params["group_layout"]
 #synthetic = net_params["synthetic"]
 
 def compute_network_metrics(G: nx.DiGraph):
@@ -63,26 +64,69 @@ def compute_network_metrics(G: nx.DiGraph):
 
     print("\n" + "=" * 40)
 
-def plot_network(G, color_map, leanings_lookup, title):
+
+def grouped_layout(G, group_lookup, spread=0.15, seed=42):
+    """
+    Places nodes in circular zones by group.
+    - Each group gets a 'center' point on a large circle
+    - Nodes within a group are scattered around that center
+    """
+    rng = np.random.default_rng(seed)
+
+    groups = list(dict.fromkeys(group_lookup.values()))  # preserve order, deduplicate
+    n_groups = len(groups)
+
+    # Assign each group a center point on a circle
+    group_centers = {
+        group: np.array([
+            np.cos(2 * np.pi * i / n_groups),
+            np.sin(2 * np.pi * i / n_groups)
+        ])
+        for i, group in enumerate(groups)
+    }
+
+    pos = {}
+    for node in G.nodes():
+        group = group_lookup.get(int(node), "unknown")
+        center = group_centers[group]
+        # Scatter node randomly within the group's zone
+        offset = rng.uniform(-spread, spread, size=2)
+        pos[node] = center + offset
+
+    return pos, group_centers
+
+def plot_network(G, color_map, leanings_lookup, title, group_layout=False):
     node_colors = [color_map[leanings_lookup[int(node)]] for node in G.nodes()]
+    if group_layout:
+        pos, group_centers = grouped_layout(G, leanings_lookup, spread=0.15)
 
-    # --- Plot ---
-    plt.figure(figsize=(8, 6))
+        fig, ax = plt.subplots(figsize=(12, 12))
+        nx.draw_networkx(
+            G, pos=pos, node_color=node_colors, node_size=200, font_color="white", font_weight="bold",
+            edge_color="#cccccc", width=1.5, with_labels=False, ax=ax
+        )
+        for group, center in group_centers.items():
+            ax.text(
+                center[0], center[1] + 0.22,  # offset above the cluster
+                group,
+                fontsize=11, fontweight="bold", ha="center", va="center",
+                color=color_map.get(group, "black"),
+                bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.8)
+            )
+    else:
+        plt.figure(figsize=(8, 6))
+        pos = nx.spring_layout(G, k=1, seed=42)
+        pos = nx.circular_layout(G)
 
-    pos = nx.spring_layout(G, k=1, seed=42)
-    pos = nx.circular_layout(G)
 
-    nx.draw_networkx(G, pos=pos, node_color=node_colors, node_size=200, font_color="white", font_weight="bold",
-        edge_color="#cccccc", width=1.5, with_labels=False
-    )
-
-    legend_elements = [Patch(facecolor=v, label=k) for k, v in color_map.items()]
-    plt.legend(handles=legend_elements, loc="best", fontsize=11)
+        legend_elements = [Patch(facecolor=v, label=k) for k, v in color_map.items()]
+        plt.legend(handles=legend_elements, loc="best", fontsize=11)
 
     plt.title(title, fontsize=14)
     plt.axis("off")
     plt.tight_layout()
     plt.show()
+
 
 eel = []
 real_network = []
@@ -109,7 +153,10 @@ G.add_edges_from(eel)
 if compute_metrics:
     compute_network_metrics(G)
 if draw_network:
-    color_mapping = {"far-left": "black", "far-right": "red", "right": "orange", "left": "blue", "center": "pink", "non-political": "green", "unknown": "magenta"}
+    color_mapping = {
+        "far-left": "black", "far-right": "red", "right": "orange",
+        "left": "blue", "center": "pink", "non-political": "green", "unknown": "magenta"
+    }
 
     if synthetic_network_src:
         title = "Synthetic network by political leaning"
@@ -134,4 +181,4 @@ if draw_network:
     print(len(G))
 
     leanings_lookup = df.set_index("account_id")["political_leaning"].to_dict()
-    plot_network(G, color_map=color_mapping, leanings_lookup=leanings_lookup, title=title+f", sampled {G.number_of_nodes()} nodes")
+    plot_network(G, group_layout=group_layout, color_map=color_mapping, leanings_lookup=leanings_lookup, title=title+f", sampled {G.number_of_nodes()} nodes")
