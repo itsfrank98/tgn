@@ -92,15 +92,16 @@ MEMORY_DIM = args["memory_dim"]
 LOAD_MODEL = args["load_model"]
 CONSIDER_SYNTHETIC = args["consider_synthetic"]
 
-Path("./saved_models/").mkdir(parents=True, exist_ok=True)
-Path("./saved_checkpoints/").mkdir(parents=True, exist_ok=True)
+saved_models_dir = "./saved_models/with_comments"
+saved_checkpoints_dir = "./saved_checkpoints/with_comments"
+Path(saved_models_dir).mkdir(parents=True, exist_ok=True)
+Path(saved_checkpoints_dir).mkdir(parents=True, exist_ok=True)
 if CONSIDER_SYNTHETIC:
     suffix = "with_synthetic"
 else:
     suffix = "without_synthetic"
-MODEL_SAVE_PATH = f'./saved_models/{args["prefix"]}-{args["data"]}-{NEG_SAMPLING_RATIO}-{suffix}.pth'
-get_checkpoint_path = lambda \
-        epoch: f'./saved_checkpoints/{args["prefix"]}-{args["data"]}-{epoch}.pth'
+MODEL_SAVE_PATH = f'{saved_models_dir}/{args["prefix"]}-{args["data"]}-{NEG_SAMPLING_RATIO}-{suffix}.pth'
+get_checkpoint_path = lambda epoch: f'{saved_checkpoints_dir}/{args["prefix"]}-{args["data"]}-{epoch}.pth'
 
 ### set up logger
 logging.basicConfig(level=logging.INFO)

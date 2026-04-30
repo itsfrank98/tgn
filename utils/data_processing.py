@@ -3,7 +3,6 @@ import random
 import pandas as pd
 
 
-
 class Data:
     def __init__(self, sources, destinations, timestamps, edge_idxs, labels, interaction_types=None, global_idxs=None,
                  node_idxs=None):
