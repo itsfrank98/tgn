@@ -12,7 +12,7 @@ import numpy as np
 
 from model.tgn import TGN
 from utils.utils import EarlyStopMonitor, get_neighbor_finder, MLP
-from utils.data_processing import compute_time_statistics, get_data_node_classification
+from utils.data_processing_for_comments import compute_time_statistics, get_data_node_classification
 from evaluation.evaluation import eval_node_classification
 
 random.seed(0)

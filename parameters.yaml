@@ -1,10 +1,12 @@
-data: "gab_post_follow_comment_nodeft"
-consider_synthetic: True
-load_model: True
+data: "gab_posts_no_zero_snap0" #"gab_posts_10k_synthetic"
+consider_synthetic: False
+load_model: False
 use_memory: False
+ext: "tsv"
+features_src: "data/preprocess_outputs"
 memory_dim: 10
 message_function: "mlp"
-negative_sampling_ratio: 1
+negative_sampling_ratio: 2
 bs: 1000
 prefix: ''
 n_degree: 10
@@ -33,15 +35,15 @@ dyrep: False
 
 
 net_analysis:
-  real_edges_src: "data/clean_data/social_network.edg"
-  synthetic_edges_src: "connections_2.pkl"
-  compute_metrics: False
-  draw_network: False
-  mirror_degree_distribution: True
-  threshold: .5
+  real_edges_src: #"data/clean_data/social_network.edg"
+  synthetic_edges_src: "filtered_synthetic_edges.pkl" #"connections_2.pkl" #
+  compute_metrics: True
+  draw_network: True
+  mirror_degree_distribution: #True
+  threshold: .65
 
   draw_network_params:
-    sample_n_nodes: 100
+    sample_n_nodes: 795
     group_layout: "circular"
 
   mirroring_node_degrees_params:

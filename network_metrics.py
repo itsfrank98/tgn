@@ -40,12 +40,6 @@ def compute_network_metrics(G: nx.DiGraph):
     print(f"  Avg In-Degree Centrality:   {np.mean(list(in_centrality.values())):.4f}")
     out_centrality = nx.out_degree_centrality(G)
     print(f"  Avg Out-Degree Centrality:  {np.mean(list(out_centrality.values())):.4f}")
-    # --- Path lengths (on largest SCC for validity) ---
-    print("\n📏 Path Lengths (largest SCC)")
-    largest_scc = max(nx.strongly_connected_components(G), key=len)
-    SCC = G.subgraph(largest_scc)
-    avg_path = nx.average_shortest_path_length(SCC)
-    print(f"  Avg Shortest Path Length:  {avg_path:.4f}")
     communities = louvain_communities(G, seed=123)
     modularity = nx.community.modularity(G, communities)
     print(f"  Modularity: {modularity}")
@@ -83,7 +77,6 @@ def stratified_sample(df: pd.DataFrame, n, label_col="political_leaning", min_pe
       samples.append(group.sample(n=total, random_state=random_state))
 
     return pd.concat(samples).sample(frac=1, random_state=random_state).reset_index(drop=True)
-
 
 def grouped_layout(G, group_lookup, spread=0.15, seed=42):
     """
@@ -234,140 +227,88 @@ def plot_network(G, color_map, leanings_lookup, title, group_layout=False, order
     plt.show()
 
 
-def fit_real_stats(real_profiles: pd.DataFrame, real_graph: nx.DiGraph, political_leaning_key) -> dict:
+def fit_real_stats(real_profiles: pd.DataFrame, real_graph: nx.DiGraph, political_leaning_key: str) -> dict:
     """
-    Returns a dict keyed by political group with:
-      - 'out_degrees' : np.array of observed out-degrees (for empirical sampling)
-      - 'intra_ratio' : fraction of out-edges that go to same-group users
+    For each (source_group, target_group) pair, computes:
+      - p_connect        : P(a user in source_group has >= 1 followee in target_group)
+      - nonzero_degrees  : empirical distribution of # followees in target_group,
+                           conditional on having at least one (used to sample N)
     """
     political_leanings = real_profiles[political_leaning_key].drop_duplicates().tolist()
-    # map user → group
-    id_to_group = dict(zip(real_profiles["account_id"], real_profiles[political_leaning_key]))
+    id_to_group = dict(zip(real_profiles["account_id"].astype(str), real_profiles[political_leaning_key]))
 
     stats = {}
-    for group in political_leanings:
-        members = set(real_profiles.loc[real_profiles[political_leaning_key] == group, "account_id"])
+    for src_group in political_leanings:
+        members = {str(m) for m in real_profiles.loc[real_profiles[political_leaning_key] == src_group, "account_id"]}
 
-        out_degrees = []
-        intra_counts = []
-        inter_counts = []
-
+        # cross_counts[tgt_group] = list of per-member followee counts toward tgt_group
+        cross_counts = defaultdict(list)
         for user in members:
-            if user not in real_graph:
-                out_degrees.append(0)
-                continue
-            followees = list(real_graph.successors(user))
-            out_degrees.append(len(followees))
-            intra = sum(1 for f in followees if id_to_group.get(f) == group)
-            inter = len(followees) - intra
-            intra_counts.append(intra)
-            inter_counts.append(inter)
+            per_target = defaultdict(int)
+            if user in real_graph:
+                for f in real_graph.successors(user):
+                    tg = id_to_group.get(f)
+                    if tg:
+                        per_target[tg] += 1
+            for tg in political_leanings:
+                cross_counts[tg].append(per_target.get(tg, 0))
 
-        total_out = sum(intra_counts) + sum(inter_counts)
-        intra_ratio = sum(intra_counts) / total_out if total_out > 0 else 0.5
+        src_stats = {}
+        for tgt_group in political_leanings:
+            counts = cross_counts[tgt_group]
+            p_connect = float(np.mean([1 if c > 0 else 0 for c in counts]))
+            nonzero = [c for c in counts if c > 0]
+            nonzero_degrees = np.array(nonzero, dtype=int) if nonzero else np.array([1])
+            src_stats[tgt_group] = {
+                "p_connect": p_connect,
+                "nonzero_degrees": nonzero_degrees,
+            }
 
-        stats[group] = {
-            "out_degrees": np.array(out_degrees, dtype=int),
-            "intra_ratio": intra_ratio,
-        }
-
-        print(f"  [{group:12s}]  median_out_degree={np.median(out_degrees):.1f}"
-              f"  mean_out_degree={np.mean(out_degrees):.1f}"
-              f"  intra_ratio={intra_ratio:.2f}")
+        stats[src_group] = src_stats
+        print(f"  [{src_group}]  " + "  ".join(
+            f"{tg}:{src_stats[tg]['p_connect']:.2f}" for tg in political_leanings
+        ))
 
     return stats
 
 
-def build_candidate_index(raw_connections: list, synth_profiles: pd.DataFrame, threshold: float, political_leaning_key) -> dict:
+def build_synthetic_edges(synth_profiles: pd.DataFrame, political_leaning_key: str, connections: list, real_stats: dict, seed=42) -> list:
     """
-    For each synthetic user u1 (follower), build a sorted list of
-    (score, u2) candidates, filtered by MIN_SCORE_FLOOR.
+    For each synthetic user u1 with leaning P, and for each target group L:
+      1. Draw Bernoulli(p_connect[P][L]) — skip group L if 0.
+      2. Sample N from nonzero_degrees[P][L].
+      3. Take the top-N scored candidates from group L.
 
-    Returns: { u1_id : [(score, u2_id), ...] }  sorted descending by score
+    connections : list of (u1_id, u2_id, score)
     """
-    synth_ids = set(synth_profiles["account_id"].astype(str))
-    id_to_group = dict(zip(synth_profiles["account_id"], synth_profiles[political_leaning_key]))
+    rng = np.random.default_rng(seed)
 
-    # group u2 candidates by u1
-    raw_index: dict = defaultdict(list)
-    for u1, u2, score in raw_connections:
+    id_to_group = dict(zip(synth_profiles["account_id"].astype(str), synth_profiles[political_leaning_key]))
+
+    # per-user candidate lists per target group, sorted by score descending
+    user_group_candidates: dict = defaultdict(lambda: defaultdict(list))
+    for u1, u2, score in connections:
         u1, u2 = str(u1), str(u2)
-        if u1 not in synth_ids or u2 not in synth_ids:
+        tg = id_to_group.get(u2)
+        if tg:
+            user_group_candidates[u1][tg].append((score, u2))
+    for u1 in user_group_candidates:
+        for tg in user_group_candidates[u1]:
+            user_group_candidates[u1][tg].sort(reverse=True)
+
+    edges = []
+    for u1, src_group in id_to_group.items():
+        if src_group not in real_stats:
             continue
-        if score < threshold:
-            continue
-        raw_index[u1].append((score, u2))
+        for tgt_group, pair_stats in real_stats[src_group].items():
+            # Bernoulli: does this user connect to tgt_group at all?
+            if rng.random() > pair_stats["p_connect"]:
+                continue
+            n = int(rng.choice(pair_stats["nonzero_degrees"]))
+            pool = user_group_candidates[u1][tgt_group]
+            edges.extend((u1, u2) for _, u2 in pool[:n])
 
-    # sort descending
-    candidate_index = {}
-    for u1, pairs in raw_index.items():
-        pairs.sort(key=lambda x: x[0], reverse=True)
-        candidate_index[u1] = pairs
-
-    return candidate_index, id_to_group
-
-def select_edges_for_user(u1: str, u1_group: str, candidates: list, id_to_group: dict, target_n: int, intra_ratio: float) -> list:
-    """
-    Split candidates into intra-group and inter-group pools (preserving
-    score order within each), then fill the intra and inter quotas greedily.
-    Falls back gracefully when a pool is exhausted.
-    """
-    intra_pool = [(s, u2) for s, u2 in candidates if id_to_group.get(u2) == u1_group]
-    inter_pool = [(s, u2) for s, u2 in candidates if id_to_group.get(u2) != u1_group]
-
-    n_intra = round(intra_ratio * target_n)
-    n_inter = target_n - n_intra
-
-    # take as many as available; spill overflow into the other pool
-    chosen_intra = intra_pool[:n_intra]
-    intra_deficit = n_intra - len(chosen_intra)
-
-    chosen_inter = inter_pool[:n_inter + intra_deficit]
-    inter_deficit = max(0, n_inter - len(inter_pool))
-
-    # fill inter deficit from remaining intra
-    if inter_deficit > 0:
-        extra_intra = intra_pool[n_intra: n_intra + inter_deficit]
-        chosen_intra = chosen_intra + extra_intra
-
-    chosen = chosen_intra + chosen_inter
-    return [(u1, u2) for _, u2 in chosen]
-
-
-def build_synthetic_edges(synth_profiles: pd.DataFrame, candidate_index: dict, id_to_group: dict, real_stats: dict,
-                          political_leaning_key) -> list:
-    """
-    Main loop: for every synthetic user, sample a target degree from the
-    real empirical distribution of their group, then call select_edges_for_user.
-    """
-    all_edges = []
-
-    for _, row in synth_profiles.iterrows():
-        u1 = str(row["account_id"])
-        group = row[political_leaning_key]
-
-        group_stats = real_stats[group]
-        candidates = candidate_index.get(u1, [])
-
-        if not candidates:
-            continue  # no scored pairs for this user
-
-        # sample target degree from empirical distribution of the real group
-        target_n = int(np.random.choice(group_stats["out_degrees"]))
-        target_n = max(0, target_n)
-
-        if target_n == 0:
-            continue
-
-        edges = select_edges_for_user(u1=u1, u1_group=group, candidates=candidates, id_to_group=id_to_group,
-                                      target_n=target_n, intra_ratio=group_stats["intra_ratio"])
-        all_edges.extend(edges)
-
-    # deduplicate (same pair could appear from both sides in theory)
-    all_edges = list(set(all_edges))
-    # remove self-loops
-    all_edges = [(u, v) for u, v in all_edges if u != v]
-    return all_edges
+    return [(u, v) for u, v in set(edges) if u != v]
 
 
 if __name__ == "__main__":
@@ -391,25 +332,29 @@ if __name__ == "__main__":
     Synthetic_graph = nx.DiGraph()
 
     if real_edges_src:
-        with open(real_edges_src, "rb") as f:
+        with open(real_edges_src, "r") as f:
             for l in f.readlines():
-                e1, e2 = l.split()
-                e1 = int(e1.strip())
-                e2 = int(e2.strip())
+                e1, e2 = l.split("\t")
+                e1, e2 = e1.strip(), e2.strip()
                 real_network.append((e1, e2))
                 nodes_with_connections.add(e1)
                 nodes_with_connections.add(e2)
+
         Real_graph.add_edges_from(real_network)
 
     if synthetic_edges_src:
         with open(synthetic_edges_src, "rb") as f:
             el = pickle.load(f)
-        synthetic_network = [(int(e[0]), int(e[1])) for e in el]
+            synthetic_network = [(str(e[0]), str(e[1])) for e in el]  # if e[2]>threshold
         Synthetic_graph.add_edges_from(synthetic_network)
 
     if compute_metrics:
-        compute_network_metrics(Real_graph)
-        compute_network_metrics(Synthetic_graph)
+        if len(Real_graph) > 0:
+            print("REAL NETWORK STATS")
+            compute_network_metrics(Real_graph)
+        if len(Synthetic_graph) > 0:
+            print("\n SYNTHETIC NETWORK STATS")
+            compute_network_metrics(Synthetic_graph)
 
     if mirror_degree_distribution:
         output_edges_path = net_params["mirroring_node_degrees_params"]["output_edges_path"]
@@ -420,23 +365,21 @@ if __name__ == "__main__":
         synthetic_profiles = pd.read_csv(synthetic_profiles_src).drop_duplicates(subset="account_id")
         with open(synthetic_edges_src, "rb") as f:
             raw_connections = pickle.load(f)
+        raw_connections = [e for e in raw_connections if e[2]>threshold]
+        print(len(raw_connections))
 
         # ── fit real stats ────────────────────────────────────────────────────────
         print("\nFitting real-network statistics …")
         real_stats = fit_real_stats(real_profiles, Real_graph, political_leaning_key=political_leaning_key)
 
-        # ── build candidate index ─────────────────────────────────────────────────
-        print("\nBuilding candidate index …")
-        candidate_index, synth_id_to_group = build_candidate_index(raw_connections, synthetic_profiles, threshold=threshold, political_leaning_key=political_leaning_key)
-
         # ── edge selection ────────────────────────────────────────────────────────
         print("\nSelecting edges …")
-        synthetic_edges = build_synthetic_edges(synthetic_profiles, candidate_index, synth_id_to_group, real_stats, political_leaning_key=political_leaning_key)
+        synthetic_edges = build_synthetic_edges(synthetic_profiles, political_leaning_key=political_leaning_key, connections=raw_connections, real_stats=real_stats)
         print(f"  Synthetic edges created: {len(synthetic_edges)}")
 
         # ── build synthetic graph ─────────────────────────────────────────────────
         synth_graph = nx.DiGraph()
-        synth_graph.add_nodes_from(synthetic_profiles["account_id"])
+        #synth_graph.add_nodes_from(synthetic_profiles["account_id"])
         synth_graph.add_edges_from(synthetic_edges)
 
         # ── save edge list ────────────────────────────────────────────────────────
@@ -458,26 +401,27 @@ if __name__ == "__main__":
         }
         for G, l, df_src in [(Real_graph, "Real", "data/clean_data/stance/stance_mistral_real.csv"),
                              (Synthetic_graph, "Synthetic", "data/clean_data/synthetic_posts.csv")]:
-            df = pd.read_csv(df_src)
-            title = l + " network by political leaning"
-            leanings = df.drop_duplicates(subset=political_leaning_key)[political_leaning_key].tolist()
-            df_nodes = df["account_id"].drop_duplicates().tolist()
-            G_new = G.copy()
-            for node in G.nodes():
-                if node not in df_nodes or (l=="Real" and node not in nodes_with_connections):
-                    G_new.remove_node(node)
-            if nodes_to_sample:
-                sampled_df = stratified_sample(df, n=nodes_to_sample, min_per_label=10)
-                sampled_nodes = sampled_df["account_id"].tolist()
-                #sampled_nodes = random.sample(list(G_new.nodes()), nodes_to_sample)
-                G_new = G_new.subgraph(sampled_nodes)
-            G = G_new.copy()
-            isolated_nodes = list(nx.isolates(G_new))
-            G.remove_nodes_from(isolated_nodes)
+            if len(G) > 0:
+                df = pd.read_csv(df_src)
+                title = l + " network by political leaning"
+                leanings = df.drop_duplicates(subset=political_leaning_key)[political_leaning_key].tolist()
+                df_nodes = df["account_id"].drop_duplicates().astype(str).tolist()
+                G_new = G.copy()
+                for node in G.nodes():
+                    if node not in df_nodes or (l=="Real" and node not in nodes_with_connections):
+                        G_new.remove_node(node)
+                if nodes_to_sample:
+                    sampled_df = stratified_sample(df, n=nodes_to_sample, min_per_label=10)
+                    sampled_nodes = sampled_df["account_id"].astype(str).tolist()
+                    #sampled_nodes = random.sample(list(G_new.nodes()), nodes_to_sample)
+                    G_new = G_new.subgraph(sampled_nodes)
+                G = G_new.copy()
+                isolated_nodes = list(nx.isolates(G_new))
+                G.remove_nodes_from(isolated_nodes)
 
-            order = ["far-right", "right", "center", "non-political", "left", "far-left"]
-            leanings_lookup = df.set_index("account_id")[political_leaning_key].to_dict()
-
-            plot_network(G, group_layout=group_layout, color_map=color_mapping, leanings_lookup=leanings_lookup,
-                        title=title+f", sampled {G.number_of_nodes()} nodes", order=order)
+                order = ["far-right", "right", "center", "non-political", "left", "far-left"]
+                leanings_lookup = df.set_index("account_id")[political_leaning_key].to_dict()
+                print(len(G.edges))
+                plot_network(G, group_layout=group_layout, color_map=color_mapping, leanings_lookup=leanings_lookup,
+                            title=title+f", sampled {G.number_of_nodes()} nodes", order=order)
 

@@ -75,6 +75,7 @@ except:
 
 BATCH_SIZE = args["bs"]
 NUM_NEIGHBORS = args["n_degree"]
+EXT = args["ext"]
 NUM_NEG = 1
 NUM_EPOCH = args["n_epoch"]
 NUM_HEADS = args["n_head"]
@@ -91,9 +92,10 @@ MESSAGE_DIM = args["message_dim"]
 MEMORY_DIM = args["memory_dim"]
 LOAD_MODEL = args["load_model"]
 CONSIDER_SYNTHETIC = args["consider_synthetic"]
+FEATURES_SRC = args["features_src"]
 
-saved_models_dir = "./saved_models/with_comments"
-saved_checkpoints_dir = "./saved_checkpoints/with_comments"
+saved_models_dir = "./saved_models"
+saved_checkpoints_dir = "./saved_checkpoints"
 Path(saved_models_dir).mkdir(parents=True, exist_ok=True)
 Path(saved_checkpoints_dir).mkdir(parents=True, exist_ok=True)
 if CONSIDER_SYNTHETIC:
@@ -122,11 +124,11 @@ logger.info(args)
 ### Extract data for training, validation and testing
 if DATA.__contains__("gab"):
     full_data, train_data, val_data, test_data, new_node_val_data, new_node_test_data, inference_data = get_data_with_interaction(
-        DATA, different_new_nodes_between_val_and_test=args["different_new_nodes"], consider_synthetic=CONSIDER_SYNTHETIC) #
+        DATA, different_new_nodes_between_val_and_test=args["different_new_nodes"], consider_synthetic=CONSIDER_SYNTHETIC, ext=EXT) #
     #inference_data = full_data
 
-    edge_features = np.load(f"data/ml_{DATA}_edge.npy")
-    node_features = np.load(f"data/ml_{DATA}_node.npy")
+    edge_features = np.load(os.path.join(FEATURES_SRC, f"ml_{DATA}_edge.npy"))
+    node_features = np.load(os.path.join(FEATURES_SRC, f"ml_{DATA}_node.npy"))
 
 else:
     node_features, edge_features, full_data, train_data, val_data, test_data, new_node_val_data, \

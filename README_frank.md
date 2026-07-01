@@ -11,4 +11,14 @@
 
 ## Dopo aver addestrato:
 - Lancia `train_self_supervised.py` settando `load_model: True` nel file parameters.yaml
-- Sarà generato un file `connections_n.pkl` dove `n` è il negative_sampling_rtio
+- Sarà generato un file `connections_n.pkl` dove `n` è il negative_sampling_ratio
+
+
+### Come funziona il preprocessing?
+Il preprocessing genera un csv con questi campi:
+- source_user: ID dell'utente da cui l'arco parte
+- destination_user: ID dell'utente a cui l'arco punta
+- timestamp
+- state_label,
+- comma_separated_list_of_features,
+- type_interaction: può essere 0 (indica l'evoluzione del nodo stesso), 1 (indica due utenti che si seguono), 2 (indica un commento)
