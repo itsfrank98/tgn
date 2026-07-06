@@ -1,14 +1,12 @@
 import math
 import logging
 import time
-import sys
 import argparse
 import torch
 import numpy as np
 import pickle
 import yaml
 from pathlib import Path
-
 from evaluation.evaluation import eval_edge_prediction, predict_connections
 from model.tgn import TGN
 from utils.utils import EarlyStopMonitor, RandEdgeSampler, get_neighbor_finder
@@ -82,6 +80,7 @@ NUM_HEADS = args["n_head"]
 NEG_SAMPLING_RATIO = args["negative_sampling_ratio"]
 DROP_OUT = args["drop_out"]
 GPU = args["gpu"]
+EMBEDDING_TYPE = args["embedding_type"]
 DATA = args["data"]
 NUM_LAYER = args["n_layer"]
 LEARNING_RATE = args["lr"]
@@ -93,17 +92,21 @@ MEMORY_DIM = args["memory_dim"]
 LOAD_MODEL = args["load_model"]
 CONSIDER_SYNTHETIC = args["consider_synthetic"]
 FEATURES_SRC = args["features_src"]
-
 saved_models_dir = "./saved_models"
 saved_checkpoints_dir = "./saved_checkpoints"
 Path(saved_models_dir).mkdir(parents=True, exist_ok=True)
 Path(saved_checkpoints_dir).mkdir(parents=True, exist_ok=True)
+
+dataset_name = DATA + f"_{EMBEDDING_TYPE}"
+
 if CONSIDER_SYNTHETIC:
     suffix = "with_synthetic"
+    dataset_name += f"_{suffix}"
+    #suffix = "without_synthetic"
 else:
     suffix = "without_synthetic"
-MODEL_SAVE_PATH = f'{saved_models_dir}/{args["prefix"]}-{args["data"]}-{NEG_SAMPLING_RATIO}-{suffix}.pth'
-get_checkpoint_path = lambda epoch: f'{saved_checkpoints_dir}/{args["prefix"]}-{args["data"]}-{epoch}.pth'
+MODEL_SAVE_PATH = f'{saved_models_dir}/{args["prefix"]}-{DATA}-{NEG_SAMPLING_RATIO}-{suffix}-{EMBEDDING_TYPE}.pth'
+get_checkpoint_path = lambda epoch: f'{saved_checkpoints_dir}/{args["prefix"]}-{DATA}-{epoch}.pth'
 
 ### set up logger
 logging.basicConfig(level=logging.INFO)
@@ -124,15 +127,16 @@ logger.info(args)
 ### Extract data for training, validation and testing
 if DATA.__contains__("gab"):
     full_data, train_data, val_data, test_data, new_node_val_data, new_node_test_data, inference_data = get_data_with_interaction(
-        DATA, different_new_nodes_between_val_and_test=args["different_new_nodes"], consider_synthetic=CONSIDER_SYNTHETIC, ext=EXT) #
+        df_path=FEATURES_SRC, dataset_name=dataset_name, different_new_nodes_between_val_and_test=args["different_new_nodes"],
+        consider_synthetic=CONSIDER_SYNTHETIC, ext=EXT) #
     #inference_data = full_data
 
-    edge_features = np.load(os.path.join(FEATURES_SRC, f"ml_{DATA}_edge.npy"))
-    node_features = np.load(os.path.join(FEATURES_SRC, f"ml_{DATA}_node.npy"))
+    edge_features = np.load(os.path.join(FEATURES_SRC, f"ml_{dataset_name}_edge.npy"))
+    node_features = np.load(os.path.join(FEATURES_SRC, f"ml_{dataset_name}_node.npy"))
 
 else:
     node_features, edge_features, full_data, train_data, val_data, test_data, new_node_val_data, \
-        new_node_test_data = get_data(DATA, different_new_nodes_between_val_and_test=args["different_new_nodes"],
+        new_node_test_data = get_data(DATA+f"_{EMBEDDING_TYPE}", different_new_nodes_between_val_and_test=args["different_new_nodes"],
                                       randomize_features=args["randomize_features"])
 
 # Initialize training neighbor finder to retrieve temporal graph
@@ -142,6 +146,7 @@ full_ngh_finder = get_neighbor_finder(full_data, args["uniform"])
 
 # Set device
 device_string = 'cuda:{}'.format(GPU) if torch.cuda.is_available() else 'cpu'
+print(device_string)
 device = torch.device(device_string)
 
 # Initialize negative samplers. Set seeds for validation and testing so negatives are the same
@@ -191,7 +196,7 @@ if LOAD_MODEL:
     real_user_ids = list(set(list(train_data.sources) + list(train_data.destinations)))
     connections = predict_connections(model=tgn, data=inference_data, batch_size=2000, real_user_ids=None)  #real_user_ids
     print(len(connections))
-    with open(f"connections_{NEG_SAMPLING_RATIO}.pkl", "wb") as f:
+    with open(f"connections_{NEG_SAMPLING_RATIO}_{EMBEDDING_TYPE}.pkl", "wb") as f:
         pickle.dump(connections, f)
 
 else:

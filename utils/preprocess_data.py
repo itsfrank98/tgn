@@ -2,12 +2,7 @@ import numpy as np
 import pandas as pd
 import os
 from tqdm import tqdm
-
-BASE_DIR = "/home/francesco/tgn/data/clean_data" # "/home/francesco/tgn/data/with_synthetic/10k_users"
-OUTPUT_DIR = "data/preprocess_outputs"
-data_names = ["gab1", "gab_posts_10k_synthetic", "gab_posts_no_zero_snap0"]
-data_name = data_names[2]      # ---> fatto preprocessing per il caso baseline
-bipartite = False
+import yaml
 
 def preprocess_type_interactions(data_name):
     u_list, i_list, ts_list, label_list, idx_list, type_list, node_features, edge_features = [], [], [], [], [], [], [], []
@@ -109,15 +104,15 @@ def reindex(df, bipartite=True):
     return new_df
 
 
-def run(data_name, bipartite=True):
+def main(base_dir, output_dir,data_name, ext, bipartite=True):
     # Path("data/").mkdir(parents=True, exist_ok=True)
-    PATH = os.path.join(BASE_DIR, f"{data_name}.tsv")
-    OUT_DF = os.path.join(BASE_DIR, f"ml_{data_name}.tsv")
-    OUT_EDGE_FEAT = os.path.join(OUTPUT_DIR, f"ml_{data_name}_edge.npy")
-    OUT_NODE_FEAT = os.path.join(OUTPUT_DIR, f"ml_{data_name}_node.npy")
+    path = os.path.join(base_dir, f"{data_name}.{ext}")
+    out_df = os.path.join(output_dir, f"ml_{data_name}.{ext}")
+    out_edge_feat = os.path.join(output_dir, f"ml_{data_name}_edge.npy")
+    out_node_feat = os.path.join(output_dir, f"ml_{data_name}_node.npy")
 
     if data_name == "reddit":
-        df, feat = preprocess(PATH)
+        df, feat = preprocess(path)
         new_df = reindex(df, bipartite)
 
         empty = np.zeros(feat.shape[1])[np.newaxis, :]
@@ -126,15 +121,28 @@ def run(data_name, bipartite=True):
         max_idx = max(new_df.u.max(), new_df.i.max())
         rand_feat = np.zeros((max_idx + 1, 172))
 
-        new_df.to_csv(OUT_DF)
-        np.save(OUT_EDGE_FEAT, feat)
-        np.save(OUT_NODE_FEAT, rand_feat)
+        new_df.to_csv(out_df)
+        np.save(out_edge_feat, feat)
+        np.save(out_node_feat, rand_feat)
 
     else:
-        df, edge_features, node_features = preprocess_type_interactions(PATH)
+        df, edge_features, node_features = preprocess_type_interactions(path)
         #df = reindex(df, bipartite)
-        np.save(OUT_EDGE_FEAT, edge_features)
-        np.save(OUT_NODE_FEAT, node_features)
-        df.to_csv(OUT_DF, sep="\t", quoting=3, escapechar="\\", index=False)
+        np.save(out_edge_feat, edge_features)
+        np.save(out_node_feat, node_features)
+        df.to_csv(out_df, sep="\t", quoting=3, escapechar="\\", index=False)
 
-run(data_name, bipartite=bipartite)
+
+if __name__ == "__main__":
+    with open("../parameters.yaml", 'r') as params_file:
+        args = yaml.safe_load(params_file)
+
+    data_name = args["data"]
+    consider_synthetic = args["consider_synthetic"]
+    args_prep = args["preprocessing"]
+    embedding_type = args_prep["embedding_type"]
+    data_name += f"_{embedding_type}"
+    if consider_synthetic:
+        data_name += "_with_synthetic"
+    main(base_dir=args_prep["base_dir"], output_dir=args_prep["output_dir"], data_name=data_name,
+         bipartite=args_prep["bipartite"], ext=args["ext"])

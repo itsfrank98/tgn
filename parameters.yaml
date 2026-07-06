@@ -1,9 +1,18 @@
 data: "gab_posts_no_zero_snap0" #"gab_posts_10k_synthetic"
-consider_synthetic: False
-load_model: False
+consider_synthetic: True
+
+preprocessing:
+  base_dir: "../data/clean_data"    # "/home/francesco/tgn/data/with_synthetic/10k_users"
+  output_dir: "../data/preprocess_outputs"
+  ext: "tsv"    # file extension, either tsv or csv
+  embedding_type: "sonar"
+  bipartite: False
+
+load_model: True    # Set it to true for making inference
 use_memory: False
 ext: "tsv"
 features_src: "data/preprocess_outputs"
+embedding_type: "sonar"
 memory_dim: 10
 message_function: "mlp"
 negative_sampling_ratio: 2
