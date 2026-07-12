@@ -134,8 +134,11 @@ class NeighborFinder:
     Returns 3 lists: neighbors, edge_idxs, timestamps
 
     """
-    i = np.searchsorted(self.node_to_edge_timestamps[src_idx], cut_time)
-
+    try:
+      i = np.searchsorted(self.node_to_edge_timestamps[src_idx], cut_time)
+    except IndexError:
+      print("AAAAAA")
+      print(src_idx)
     return self.node_to_neighbors[src_idx][:i], self.node_to_edge_idxs[src_idx][:i], self.node_to_edge_timestamps[src_idx][:i]
 
   def get_temporal_neighbor(self, source_nodes, timestamps, n_neighbors=20):
@@ -261,3 +264,24 @@ class NeighborFinder:
     print(f"  Reciprocity: {nx.reciprocity(G):.4f}")
 
     print("\n" + "=" * 40)
+
+def compute_node_embedding_matrix(model, data, ts_query=None, n_neighbors=10, batch_size=200):
+    model.eval()
+    unique_nodes = np.unique(np.concatenate([data.sources, data.destinations]))
+    if ts_query is None:
+      ts_query = data.timestamps.max()
+
+    embeddings = []
+    with torch.no_grad():
+      for start in range(0, len(unique_nodes), batch_size):
+        batch_nodes = unique_nodes[start:start + batch_size]
+        ts_batch = np.full(len(batch_nodes), ts_query, dtype=np.float32)
+        batch_embeddings = model.embedding_module.compute_embedding(
+          memory=model.memory,
+          source_nodes=batch_nodes,
+          timestamps=ts_batch,
+          n_layers=model.n_layers,
+          n_neighbors=n_neighbors,
+        )
+        embeddings.append(batch_embeddings.cpu())
+    return unique_nodes, torch.cat(embeddings, dim=0)

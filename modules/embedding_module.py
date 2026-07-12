@@ -115,11 +115,8 @@ class GraphEmbedding(EmbeddingModule):
             edge_deltas_torch = torch.from_numpy(edge_deltas).float().to(self.device)
 
             neighbors = neighbors.flatten()
-            neighbor_embeddings = self.compute_embedding(memory,
-                                                         neighbors,
-                                                         np.repeat(timestamps, n_neighbors),
-                                                         n_layers=n_layers - 1,
-                                                         n_neighbors=n_neighbors)
+            neighbor_embeddings = self.compute_embedding(memory, neighbors, np.repeat(timestamps, n_neighbors),
+                                                         n_layers=n_layers - 1, n_neighbors=n_neighbors)
 
             effective_n_neighbors = n_neighbors if n_neighbors > 0 else 1
             neighbor_embeddings = neighbor_embeddings.view(len(source_nodes), effective_n_neighbors, -1)
@@ -129,12 +126,8 @@ class GraphEmbedding(EmbeddingModule):
 
             mask = neighbors_torch == 0
 
-            source_embedding = self.aggregate(n_layers, source_node_conv_embeddings,
-                                              source_nodes_time_embedding,
-                                              neighbor_embeddings,
-                                              edge_time_embeddings,
-                                              edge_features,
-                                              mask)
+            source_embedding = self.aggregate(n_layers, source_node_conv_embeddings, source_nodes_time_embedding,
+                                              neighbor_embeddings, edge_time_embeddings, edge_features, mask)
 
             return source_embedding
 

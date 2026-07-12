@@ -1,18 +1,18 @@
-data: "gab_posts_no_zero_snap0" #"gab_posts_10k_synthetic"
-consider_synthetic: True
+data: "gab_posts_no_zero_snap0_byuser" #"gab_posts_10k_synthetic"
+consider_synthetic: 3 # True
 
 preprocessing:
   base_dir: "../data/clean_data"    # "/home/francesco/tgn/data/with_synthetic/10k_users"
   output_dir: "../data/preprocess_outputs"
   ext: "tsv"    # file extension, either tsv or csv
-  embedding_type: "sonar"
+  embedding_type: "bert"
   bipartite: False
 
 load_model: True    # Set it to true for making inference
 use_memory: False
 ext: "tsv"
 features_src: "data/preprocess_outputs"
-embedding_type: "sonar"
+embedding_type: "bert"
 memory_dim: 10
 message_function: "mlp"
 negative_sampling_ratio: 2
@@ -20,7 +20,7 @@ bs: 1000
 prefix: ''
 n_degree: 10
 n_head: 2
-n_epoch: 50
+n_epoch: 10
 n_layer: 1
 lr: 0.0001
 patience: 5
@@ -44,11 +44,11 @@ dyrep: False
 
 
 net_analysis:
-  real_edges_src: #"data/clean_data/social_network.edg"
-  synthetic_edges_src: "filtered_synthetic_edges.pkl" #"connections_2.pkl" #
+  real_edges_src: "data/clean_data/social_network.edg"
+  synthetic_edges_src: "connections_synthetic_10k.pkl" #"filtered_synthetic_edges.pkl" #"connections_2.pkl" #
   compute_metrics: True
   draw_network: True
-  mirror_degree_distribution: #True
+  mirror_degree_distribution: True
   threshold: .65
 
   draw_network_params:
@@ -57,5 +57,5 @@ net_analysis:
 
   mirroring_node_degrees_params:
     real_profiles_src: "data/clean_data/stance/stance_mistral_real.csv"
-    synthetic_profiles_src: "data/clean_data/synthetic_posts.csv"
-    output_edges_path: "filtered_synthetic_edges.pkl"
+    synthetic_profiles_src: "data/clean_data/synthetic_user_profiles_10k.csv"
+    output_edges_path: "filtered_synthetic_10k_edges.pkl"

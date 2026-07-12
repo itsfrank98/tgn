@@ -111,26 +111,11 @@ def main(base_dir, output_dir,data_name, ext, bipartite=True):
     out_edge_feat = os.path.join(output_dir, f"ml_{data_name}_edge.npy")
     out_node_feat = os.path.join(output_dir, f"ml_{data_name}_node.npy")
 
-    if data_name == "reddit":
-        df, feat = preprocess(path)
-        new_df = reindex(df, bipartite)
-
-        empty = np.zeros(feat.shape[1])[np.newaxis, :]
-        feat = np.vstack([empty, feat])
-
-        max_idx = max(new_df.u.max(), new_df.i.max())
-        rand_feat = np.zeros((max_idx + 1, 172))
-
-        new_df.to_csv(out_df)
-        np.save(out_edge_feat, feat)
-        np.save(out_node_feat, rand_feat)
-
-    else:
-        df, edge_features, node_features = preprocess_type_interactions(path)
-        #df = reindex(df, bipartite)
-        np.save(out_edge_feat, edge_features)
-        np.save(out_node_feat, node_features)
-        df.to_csv(out_df, sep="\t", quoting=3, escapechar="\\", index=False)
+    df, edge_features, node_features = preprocess_type_interactions(path)
+    #df = reindex(df, bipartite)
+    np.save(out_edge_feat, edge_features)
+    np.save(out_node_feat, node_features)
+    df.to_csv(out_df, sep="\t", quoting=3, escapechar="\\", index=False)
 
 
 if __name__ == "__main__":
@@ -142,7 +127,7 @@ if __name__ == "__main__":
     args_prep = args["preprocessing"]
     embedding_type = args_prep["embedding_type"]
     data_name += f"_{embedding_type}"
-    if consider_synthetic:
-        data_name += "_with_synthetic"
+    if consider_synthetic > 0:
+        data_name += f"_with_synthetic_{consider_synthetic}"
     main(base_dir=args_prep["base_dir"], output_dir=args_prep["output_dir"], data_name=data_name,
          bipartite=args_prep["bipartite"], ext=args["ext"])

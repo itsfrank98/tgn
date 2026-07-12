@@ -9,19 +9,19 @@ import yaml
 from pathlib import Path
 from evaluation.evaluation import eval_edge_prediction, predict_connections
 from model.tgn import TGN
-from utils.utils import EarlyStopMonitor, RandEdgeSampler, get_neighbor_finder
-from utils.data_processing import get_data, compute_time_statistics, get_data_with_interaction
+from utils.utils import EarlyStopMonitor, RandEdgeSampler, get_neighbor_finder, compute_node_embedding_matrix
+from utils.data_processing import compute_time_statistics, get_data_with_interaction
 import os
+import pickle
 print(os.getcwd())
 torch.manual_seed(0)
 np.random.seed(0)
 
 ### Argument and global variables
 parser = argparse.ArgumentParser('TGN self-supervised training')
-parser.add_argument('-d', '--data', type=str, help='Dataset name (eg. wikipedia or reddit)',
-                    default='wikipedia')
+parser.add_argument('-d', '--data', type=str, help='Dataset name')
 parser.add_argument('--bs', type=int, default=200, help='Batch_size')
-parser.add_argument('--prefix', type=str, default='', help='Prefix to name the checkpoints')
+parser.add_argument('--prefix', type=str, default='checks', help='Prefix to name the checkpoints')
 parser.add_argument('--n_degree', type=int, default=10, help='Number of neighbors to sample')
 parser.add_argument('--n_head', type=int, default=2, help='Number of heads used in attention layer')
 parser.add_argument('--n_epoch', type=int, default=50, help='Number of epochs')
@@ -65,12 +65,6 @@ parser.add_argument('--dyrep', action='store_true',
 with open("parameters.yaml", 'r') as params_file:
     args = yaml.safe_load(params_file)
 
-"""try:
-  args = parser.parse_args()
-except:
-  parser.print_help()
-  sys.exit(0)"""
-
 BATCH_SIZE = args["bs"]
 NUM_NEIGHBORS = args["n_degree"]
 EXT = args["ext"]
@@ -99,14 +93,15 @@ Path(saved_checkpoints_dir).mkdir(parents=True, exist_ok=True)
 
 dataset_name = DATA + f"_{EMBEDDING_TYPE}"
 
-if CONSIDER_SYNTHETIC:
-    suffix = "with_synthetic"
-    dataset_name += f"_{suffix}"
+if CONSIDER_SYNTHETIC > 0:
+    dataset_name += f"_with_synthetic_{CONSIDER_SYNTHETIC}"
     #suffix = "without_synthetic"
 else:
     suffix = "without_synthetic"
-MODEL_SAVE_PATH = f'{saved_models_dir}/{args["prefix"]}-{DATA}-{NEG_SAMPLING_RATIO}-{suffix}-{EMBEDDING_TYPE}.pth'
-get_checkpoint_path = lambda epoch: f'{saved_checkpoints_dir}/{args["prefix"]}-{DATA}-{epoch}.pth'
+
+MODEL_SAVE_PATH = f'{saved_models_dir}/{args["prefix"]}-{dataset_name}-{NEG_SAMPLING_RATIO}.pth'
+
+get_checkpoint_path = lambda epoch: f'{saved_checkpoints_dir}/{args["prefix"]}-{dataset_name}-{NEG_SAMPLING_RATIO}-{epoch}.pth'
 
 ### set up logger
 logging.basicConfig(level=logging.INFO)
@@ -125,19 +120,14 @@ logger.addHandler(ch)
 logger.info(args)
 
 ### Extract data for training, validation and testing
-if DATA.__contains__("gab"):
-    full_data, train_data, val_data, test_data, new_node_val_data, new_node_test_data, inference_data = get_data_with_interaction(
-        df_path=FEATURES_SRC, dataset_name=dataset_name, different_new_nodes_between_val_and_test=args["different_new_nodes"],
-        consider_synthetic=CONSIDER_SYNTHETIC, ext=EXT) #
-    #inference_data = full_data
+full_data, train_data, val_data, test_data, new_node_val_data, new_node_test_data, inference_data = get_data_with_interaction(
+    df_path=FEATURES_SRC, dataset_name=dataset_name, different_new_nodes_between_val_and_test=args["different_new_nodes"],
+    consider_synthetic=CONSIDER_SYNTHETIC, ext=EXT) #
+#inference_data = full_data
 
-    edge_features = np.load(os.path.join(FEATURES_SRC, f"ml_{dataset_name}_edge.npy"))
-    node_features = np.load(os.path.join(FEATURES_SRC, f"ml_{dataset_name}_node.npy"))
+edge_features = np.load(os.path.join(FEATURES_SRC, f"ml_{dataset_name}_edge.npy"))
+node_features = np.load(os.path.join(FEATURES_SRC, f"ml_{dataset_name}_node.npy"))
 
-else:
-    node_features, edge_features, full_data, train_data, val_data, test_data, new_node_val_data, \
-        new_node_test_data = get_data(DATA+f"_{EMBEDDING_TYPE}", different_new_nodes_between_val_and_test=args["different_new_nodes"],
-                                      randomize_features=args["randomize_features"])
 
 # Initialize training neighbor finder to retrieve temporal graph
 train_ngh_finder = get_neighbor_finder(train_data, args["uniform"])
@@ -152,34 +142,25 @@ device = torch.device(device_string)
 # Initialize negative samplers. Set seeds for validation and testing so negatives are the same
 # across different runs
 # NB: in the inductive setting, negatives are sampled only amongst other new nodes
-if DATA.__contains__("gab"):
-    train_edge_mask = train_data.interaction_types == 0
-    val_edge_mask = val_data.interaction_types == 0
-    test_edge_mask = test_data.interaction_types == 0
-    full_edge_mask = full_data.interaction_types == 0
-    new_node_val_mask = new_node_val_data.interaction_types == 0
-    new_node_test_mask = new_node_test_data.interaction_types == 0
+train_edge_mask = train_data.interaction_types == 0
+val_edge_mask = val_data.interaction_types == 0
+test_edge_mask = test_data.interaction_types == 0
+full_edge_mask = full_data.interaction_types == 0
+new_node_val_mask = new_node_val_data.interaction_types == 0
+new_node_test_mask = new_node_test_data.interaction_types == 0
 
-    train_rand_sampler = RandEdgeSampler(train_data.sources[train_edge_mask], train_data.destinations[train_edge_mask])
+train_rand_sampler = RandEdgeSampler(train_data.sources[train_edge_mask], train_data.destinations[train_edge_mask])
 
-    # Why below I pass full_data and not val_data? Because I would restrict which nodes can appear in negative samples to only nodes that were active in the validation period.
-    val_rand_sampler = RandEdgeSampler(full_data.sources[full_edge_mask], full_data.destinations[full_edge_mask], seed=0)
-    nn_val_rand_sampler = RandEdgeSampler(new_node_val_data.sources[new_node_val_mask],
-                                          new_node_val_data.destinations[new_node_val_mask], seed=1)
-    test_rand_sampler = RandEdgeSampler(full_data.sources[full_edge_mask], full_data.destinations[full_edge_mask], seed=2)
-    nn_test_rand_sampler = RandEdgeSampler(new_node_test_data.sources[new_node_test_mask],
-                                           new_node_test_data.destinations[new_node_test_mask], seed=3)
-    mean_time_shift_src, std_time_shift_src, mean_time_shift_dst, std_time_shift_dst = \
-        compute_time_statistics(full_data.sources[full_edge_mask], full_data.destinations[full_edge_mask],
-                                full_data.timestamps[full_edge_mask])
-else:
-    train_rand_sampler = RandEdgeSampler(train_data.sources, train_data.destinations)
-    val_rand_sampler = RandEdgeSampler(full_data.sources, full_data.destinations, seed=0)
-    nn_val_rand_sampler = RandEdgeSampler(new_node_val_data.sources, new_node_val_data.destinations, seed=1)
-    test_rand_sampler = RandEdgeSampler(full_data.sources, full_data.destinations, seed=2)
-    nn_test_rand_sampler = RandEdgeSampler(new_node_test_data.sources, new_node_test_data.destinations, seed=3)
-    mean_time_shift_src, std_time_shift_src, mean_time_shift_dst, std_time_shift_dst = \
-        compute_time_statistics(full_data.sources, full_data.destinations, full_data.timestamps)
+# Why below I pass full_data and not val_data? Because I would restrict which nodes can appear in negative samples to only nodes that were active in the validation period.
+val_rand_sampler = RandEdgeSampler(full_data.sources[full_edge_mask], full_data.destinations[full_edge_mask], seed=0)
+nn_val_rand_sampler = RandEdgeSampler(new_node_val_data.sources[new_node_val_mask],
+                                      new_node_val_data.destinations[new_node_val_mask], seed=1)
+test_rand_sampler = RandEdgeSampler(full_data.sources[full_edge_mask], full_data.destinations[full_edge_mask], seed=2)
+nn_test_rand_sampler = RandEdgeSampler(new_node_test_data.sources[new_node_test_mask],
+                                       new_node_test_data.destinations[new_node_test_mask], seed=3)
+mean_time_shift_src, std_time_shift_src, mean_time_shift_dst, std_time_shift_dst = \
+    compute_time_statistics(full_data.sources[full_edge_mask], full_data.destinations[full_edge_mask],
+                            full_data.timestamps[full_edge_mask])
 
 if LOAD_MODEL:
     tgn = TGN(neighbor_finder=train_ngh_finder, node_features=node_features, edge_features=edge_features, device=device,
@@ -193,11 +174,19 @@ if LOAD_MODEL:
               use_destination_embedding_in_message=args["use_destination_embedding_in_message"],
               use_source_embedding_in_message=args["use_source_embedding_in_message"], dyrep=args["dyrep"])
     tgn.load_state_dict(torch.load(MODEL_SAVE_PATH))
+    tgn.set_neighbor_finder(full_ngh_finder)
+    tgn.eval()
+    train_node_ids, train_embedding_matrix = compute_node_embedding_matrix(tgn, train_data)
+    inf_ids, inf_matrix = compute_node_embedding_matrix(tgn, inference_data)
     real_user_ids = list(set(list(train_data.sources) + list(train_data.destinations)))
+    with open("train_embeddings.pkl", "wb") as f:
+        pickle.dump(train_embedding_matrix, f)
+    with open("inf_embeddings.pkl", "wb") as f:
+        pickle.dump(inf_matrix, f)
     connections = predict_connections(model=tgn, data=inference_data, batch_size=2000, real_user_ids=None)  #real_user_ids
-    print(len(connections))
-    with open(f"connections_{NEG_SAMPLING_RATIO}_{EMBEDDING_TYPE}.pkl", "wb") as f:
-        pickle.dump(connections, f)
+    print("dumping")
+    # with open(f"connections_{NEG_SAMPLING_RATIO}_{EMBEDDING_TYPE}.pkl", "wb") as f:
+    #     pickle.dump(connections, f)
 
 else:
     for i in range(args["n_runs"]):

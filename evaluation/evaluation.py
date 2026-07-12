@@ -144,15 +144,22 @@ def predict_connections(model, data, real_user_ids, batch_size=200):
         for e_idx in exist_indices:
             pairs.append((n_idx, e_idx))
             pairs.append((e_idx, n_idx))
+    k = 0
+    with open("connections_synthetic_10k.json", "w") as f:
+        for i, j in tqdm(pairs, desc="Predicting pairs"):
+            z_i = all_embeddings[i].unsqueeze(0)
+            z_j = all_embeddings[j].unsqueeze(0)
+            prob = model.affinity_score(z_i, z_j).sigmoid().item()
+            # if prob > 0.1:
+            #     print(prob)
+            # k += 1
+            # if k == 20000:
+            #     break
+            node_i = all_nodes[i]
+            node_j = all_nodes[j]
+            predicted_edges.append((node_i, node_j, prob))
+            f.write(f"{node_i}\t{node_j}\t{prob}\n")
 
-    for i, j in tqdm(pairs, desc="Predicting pairs"):
-        z_i = all_embeddings[i].unsqueeze(0)
-        z_j = all_embeddings[j].unsqueeze(0)
-        prob = model.affinity_score(z_i, z_j).sigmoid().item()
-
-        node_i = all_nodes[i]
-        node_j = all_nodes[j]
-        predicted_edges.append((node_i, node_j, prob))
 
     if real_user_ids is None:
         model.eval()
@@ -167,16 +174,20 @@ def predict_connections(model, data, real_user_ids, batch_size=200):
             )  # shape [len(nodes), embed_dim]
 
         # Step 4: Predict pairs
+        """k = 0
+
         for i, j in tqdm(permutations(range(len(nodes_tensor)), 2)):
             z_i = embeddings[i].unsqueeze(0)
             z_j = embeddings[j].unsqueeze(0)
             prob = model.affinity_score(z_i, z_j).sigmoid().item()
-            #if prob > prob_threshold:
-            predicted_edges.append((sources_batch[i], sources_batch[j], prob))
+            k += 1
+            print(k)
+            if k == 1000:
+                break
 
-        # Sort by confidence
-
-    predicted_edges.sort(key=lambda x: x[2], reverse=True)
+        # Sort by confidence"""
+    print(len(predicted_edges))
+    #predicted_edges.sort(key=lambda x: x[2], reverse=True)
     return predicted_edges
 
 def eval_node_classification(tgn, decoder, data, edge_idxs, batch_size, n_neighbors):
