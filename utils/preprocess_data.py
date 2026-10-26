@@ -104,7 +104,7 @@ def reindex(df, bipartite=True):
     return new_df
 
 
-def main(base_dir, output_dir,data_name, ext, bipartite=True):
+def main(base_dir, output_dir, data_name, ext):
     # Path("data/").mkdir(parents=True, exist_ok=True)
     path = os.path.join(base_dir, f"{data_name}.{ext}")
     out_df = os.path.join(output_dir, f"ml_{data_name}.{ext}")
@@ -129,5 +129,4 @@ if __name__ == "__main__":
     data_name += f"_{embedding_type}"
     if consider_synthetic > 0:
         data_name += f"_with_synthetic_{consider_synthetic}"
-    main(base_dir=args_prep["base_dir"], output_dir=args_prep["output_dir"], data_name=data_name,
-         bipartite=args_prep["bipartite"], ext=args["ext"])
+    main(base_dir=args_prep["base_dir"], output_dir=args_prep["output_dir"], data_name=data_name, ext=args["ext"])

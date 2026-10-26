@@ -179,14 +179,14 @@ if LOAD_MODEL:
     train_node_ids, train_embedding_matrix = compute_node_embedding_matrix(tgn, train_data)
     inf_ids, inf_matrix = compute_node_embedding_matrix(tgn, inference_data)
     real_user_ids = list(set(list(train_data.sources) + list(train_data.destinations)))
-    with open("train_embeddings.pkl", "wb") as f:
-        pickle.dump(train_embedding_matrix, f)
-    with open("inf_embeddings.pkl", "wb") as f:
-        pickle.dump(inf_matrix, f)
+    # with open("train_embeddings.pkl", "wb") as f:
+    #     pickle.dump(train_embedding_matrix, f)
+    # with open("inf_embeddings.pkl", "wb") as f:
+    #     pickle.dump(inf_matrix, f)
     connections = predict_connections(model=tgn, data=inference_data, batch_size=2000, real_user_ids=None)  #real_user_ids
     print("dumping")
     # with open(f"connections_{NEG_SAMPLING_RATIO}_{EMBEDDING_TYPE}.pkl", "wb") as f:
-    #     pickle.dump(connections, f)
+    #      pickle.dump(connections, f)
 
 else:
     for i in range(args["n_runs"]):

@@ -100,7 +100,7 @@ def grouped_layout(G, group_lookup, spread=0.15, seed=42):
 
     pos = {}
     for node in G.nodes():
-        group = group_lookup.get(int(node), "unknown")
+        group = group_lookup.get(int(node)) #, "unknown"
         center = group_centers[group]
         # Scatter node randomly within the group's zone
         offset = rng.uniform(-spread, spread, size=2)
@@ -142,8 +142,9 @@ def grouped_circular_layout(G, group_lookup, group_arc_gap=0.08, seed=42, order=
     # Assign angles to individual nodes within each group
     group_node_lists = {g: [] for g in groups}
     for node in G.nodes():
-        g = group_lookup.get(int(node), "unknown")
-        group_node_lists[g].append(node)
+        g = group_lookup.get(int(node)) #, "unknown"
+        if g != "unknown":
+            group_node_lists[g].append(node)
 
     radius = 1.0
     radial_jitter = 0.04  # slight inward/outward jitter
@@ -214,7 +215,6 @@ def plot_network(G, color_map, leanings_lookup, title, group_layout=False, order
             )
     else:
         plt.figure(figsize=(8, 6))
-        pos = nx.spring_layout(G, k=1, seed=42)
         pos = nx.circular_layout(G)
         nx.draw_networkx(G, pos=pos, node_color=node_colors, node_size=200, font_color="white", font_weight="bold",
                          edge_color="#cccccc", width=8, with_labels=False)
@@ -304,7 +304,7 @@ def build_synthetic_edges(synth_profiles: pd.DataFrame, political_leaning_key: s
             # Bernoulli: does this user connect to tgt_group at all?
             if rng.random() > pair_stats["p_connect"]:
                 continue
-            n = int(rng.choice(pair_stats["nonzero_degrees"]))
+            n = int(rng.choice(pair_stats["nonzero_degrees"])) * 4
             pool = user_group_candidates[u1][tgt_group]
             edges.extend((u1, u2) for _, u2 in pool[:n])
 
@@ -325,6 +325,7 @@ if __name__ == "__main__":
     threshold = net_params["threshold"]
 
     real_network = []
+    synthetic_network = []
     political_leaning_key = "political_leaning"
 
     nodes_with_connections = set()
@@ -342,10 +343,14 @@ if __name__ == "__main__":
 
         Real_graph.add_edges_from(real_network)
 
-    if synthetic_edges_src:
+    if synthetic_edges_src and not mirror_degree_distribution:
         with open(synthetic_edges_src, "rb") as f:
             el = pickle.load(f)
-            synthetic_network = [(str(e[0]), str(e[1])) for e in el]  # if e[2]>threshold
+            if synthetic_edges_src.__contains__("filtered"):
+                synthetic_network = [(str(e[0]), str(e[1])) for e in el]
+            else:
+                synthetic_network = [(str(e[0]), str(e[1])) for e in el if e[2]>threshold]
+
         Synthetic_graph.add_edges_from(synthetic_network)
 
     if compute_metrics:
@@ -364,9 +369,9 @@ if __name__ == "__main__":
         real_profiles = pd.read_csv(real_profiles_src)
         synthetic_profiles = pd.read_csv(synthetic_profiles_src).drop_duplicates(subset="account_id")
         with open(synthetic_edges_src, "rb") as f:
-            raw_connections = pickle.load(f)
-        raw_connections = [e for e in raw_connections if e[2]>threshold]
-        print(len(raw_connections))
+            synthetic_network = pickle.load(f)
+        synthetic_network = [e for e in synthetic_network if e[2]>threshold]
+        print(len(synthetic_network))
 
         # ── fit real stats ────────────────────────────────────────────────────────
         print("\nFitting real-network statistics …")
@@ -374,7 +379,7 @@ if __name__ == "__main__":
 
         # ── edge selection ────────────────────────────────────────────────────────
         print("\nSelecting edges …")
-        synthetic_edges = build_synthetic_edges(synthetic_profiles, political_leaning_key=political_leaning_key, connections=raw_connections, real_stats=real_stats)
+        synthetic_edges = build_synthetic_edges(synthetic_profiles, political_leaning_key=political_leaning_key, connections=synthetic_network, real_stats=real_stats)
         print(f"  Synthetic edges created: {len(synthetic_edges)}")
 
         # ── build synthetic graph ─────────────────────────────────────────────────
@@ -397,10 +402,10 @@ if __name__ == "__main__":
         group_layout = net_params["draw_network_params"]["group_layout"]
         color_mapping = {
             "far-left": "black", "far-right": "red", "right": "orange", "left": "blue", "center": "pink",
-            "non-political": "green", "unknown": "magenta"
+            "non-political": "green"
         }
         for G, l, df_src in [(Real_graph, "Real", "data/clean_data/stance/stance_mistral_real.csv"),
-                             (Synthetic_graph, "Synthetic", "data/clean_data/synthetic_posts.csv")]:
+                             (Synthetic_graph, "Synthetic", "data/clean_data/synthetic_posts_10k_final.csv")]:
             if len(G) > 0:
                 df = pd.read_csv(df_src)
                 title = l + " network by political leaning"
